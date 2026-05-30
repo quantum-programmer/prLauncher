@@ -1,0 +1,45 @@
+﻿<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:views="clr-namespace:RDesigner.Views"
+        xmlns:strings="clr-namespace:RDesigner.Resources"
+        x:Class="RDesigner.Views.AboutWindow"
+        x:DataType="views:AboutWindowInfo"
+        Title="{DynamicResource AboutTitle}"
+        Width="460"
+        Height="300"
+        MinWidth="460"
+        MinHeight="300"
+        CanResize="False"
+        WindowStartupLocation="CenterOwner"
+        Background="WhiteSmoke"
+        SystemDecorations="Full">
+    <Border Padding="24">
+        <StackPanel Spacing="14">
+            <TextBlock Text="RDesigner"
+                       FontSize="22"
+                       FontWeight="SemiBold" />
+
+            <Grid ColumnDefinitions="170,*"
+                  RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto">
+                <TextBlock Grid.Row="0" Grid.Column="0" Text="{DynamicResource AboutVersion}" FontWeight="SemiBold" Margin="0,0,12,8" />
+                <TextBlock Grid.Row="0" Grid.Column="1" Text="{Binding Version}" Margin="0,0,0,8" />
+
+                <TextBlock Grid.Row="1" Grid.Column="0" Text="{DynamicResource AboutBuild}" FontWeight="SemiBold" Margin="0,0,12,8" />
+                <TextBlock Grid.Row="1" Grid.Column="1" Text="{Binding Build}" Margin="0,0,0,8" />
+
+                <TextBlock Grid.Row="2" Grid.Column="0" Text="{DynamicResource AboutGitHash}" FontWeight="SemiBold" Margin="0,0,12,8" />
+                <TextBlock Grid.Row="2" Grid.Column="1" Text="{Binding Hash}" Margin="0,0,0,8" />
+
+                <TextBlock Grid.Row="3" Grid.Column="0" Text="{DynamicResource AboutFullVersion}" FontWeight="SemiBold" Margin="0,0,12,8" />
+                <TextBlock Grid.Row="3" Grid.Column="1" Text="{Binding FullVersion}" Margin="0,0,0,8" />
+
+                <TextBlock Grid.Row="4" Grid.Column="0" Text="{DynamicResource AboutAssemblyVersion}" FontWeight="SemiBold" Margin="0,0,12,8" />
+                <TextBlock Grid.Row="4" Grid.Column="1" Text="{Binding AssemblyInformationalVersion}" Margin="0,0,0,8" />
+
+                <TextBlock Grid.Row="5" Grid.Column="0" Text="{DynamicResource AboutFileVersion}" FontWeight="SemiBold" Margin="0,0,12,0" />
+                <TextBlock Grid.Row="5" Grid.Column="1" Text="{Binding FileVersion}" />
+            </Grid>
+        </StackPanel>
+    </Border>
+</Window>
+

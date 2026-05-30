@@ -1,0 +1,56 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:viewModels="clr-namespace:RDesigner.ViewModels"
+             mc:Ignorable="d"
+             d:DesignWidth="1130"
+             d:DesignHeight="570"
+             x:Class="RDesigner.Views.InstallerView"
+             x:DataType="viewModels:InstallerViewModel">
+    <Grid RowDefinitions="Auto,Auto,*"
+          Margin="28">
+        <StackPanel Spacing="6">
+            <TextBlock Text="OilCtrl Installer"
+                       FontSize="28"
+                       FontWeight="SemiBold" />
+            <TextBlock Text="Native PostgreSQL 16.2 installation and initial OilCtrl database setup"
+                       FontSize="15"
+                       Foreground="#555" />
+        </StackPanel>
+
+        <Grid Grid.Row="1"
+              ColumnDefinitions="Auto,Auto,*"
+              Margin="0 18 0 18">
+            <Button Content="Install PostgreSQL"
+                    Command="{Binding InstallPostgresCommand}"
+                    MinWidth="190"
+                    Height="38" />
+            <Button Grid.Column="1"
+                    Content="Check connection"
+                    Command="{Binding CheckPostgresCommand}"
+                    MinWidth="190"
+                    Height="38"
+                    Margin="12 0 0 0" />
+            <TextBlock Grid.Column="2"
+                       Text="{Binding Status}"
+                       VerticalAlignment="Center"
+                       FontWeight="SemiBold"
+                       Margin="12 0 0 0" />
+        </Grid>
+
+        <Border Grid.Row="2"
+                BorderBrush="#D0D0D0"
+                BorderThickness="1"
+                Background="#FAFAFA"
+                Padding="12">
+            <ScrollViewer VerticalScrollBarVisibility="Auto"
+                          HorizontalScrollBarVisibility="Auto">
+                <TextBlock Text="{Binding LogText}"
+                           FontFamily="Consolas"
+                           FontSize="13"
+                           TextWrapping="NoWrap" />
+            </ScrollViewer>
+        </Border>
+    </Grid>
+</UserControl>

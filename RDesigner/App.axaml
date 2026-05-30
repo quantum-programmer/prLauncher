@@ -1,0 +1,16 @@
+<Application xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="RDesigner.App"
+             xmlns:local="using:RDesigner"
+             RequestedThemeVariant="Light">
+    <Application.DataTemplates>
+        <local:ViewLocator/>
+    </Application.DataTemplates>
+    <Application.Styles>
+        <FluentTheme />
+        <StyleInclude
+            Source="avares://Avalonia.Controls.TreeDataGrid/Themes/Fluent.axaml"/>
+        <StyleInclude 
+            Source="avares://RDesigner/Assets/Icons.axaml" />
+    </Application.Styles>
+</Application>

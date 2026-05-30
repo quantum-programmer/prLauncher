@@ -1,0 +1,61 @@
+<Project>
+  <PropertyGroup>
+    <GitVersionWorkingDirectory>$(MSBuildProjectDirectory)\..</GitVersionWorkingDirectory>
+    <GeneratedGitVersionFile>$(BaseIntermediateOutputPath)GitVersionInfo.g.cs</GeneratedGitVersionFile>
+  </PropertyGroup>
+
+  <Target Name="PrepareGitVersion" BeforeTargets="GetAssemblyAttributes;GenerateAssemblyInfo;CoreGenerateAssemblyInfo">
+    <Exec
+      Command="git describe HEAD --tags --long"
+      WorkingDirectory="$(GitVersionWorkingDirectory)"
+      ConsoleToMSBuild="true"
+      IgnoreExitCode="true">
+      <Output TaskParameter="ConsoleOutput" PropertyName="GitDescribeRaw" />
+      <Output TaskParameter="ExitCode" PropertyName="GitDescribeExitCode" />
+    </Exec>
+
+    <PropertyGroup>
+      <GitDescribe Condition="'$(GitDescribeExitCode)' == '0'">$([System.String]::Copy('$(GitDescribeRaw)').Trim())</GitDescribe>
+      <GitDescribe Condition="'$(GitDescribe)' == ''">0.0-0-gunknown</GitDescribe>
+      <GitVersionTag>$([System.Text.RegularExpressions.Regex]::Match('$(GitDescribe)', '^(.+)-([0-9]+)-g(.+)$').Groups[1].Value)</GitVersionTag>
+      <GitBuildNumber>$([System.Text.RegularExpressions.Regex]::Match('$(GitDescribe)', '^(.+)-([0-9]+)-g(.+)$').Groups[2].Value)</GitBuildNumber>
+      <GitCommitHash>$([System.Text.RegularExpressions.Regex]::Match('$(GitDescribe)', '^(.+)-([0-9]+)-g(.+)$').Groups[3].Value)</GitCommitHash>
+      <GitVersionTag Condition="'$(GitVersionTag)' == ''">0.0</GitVersionTag>
+      <GitBuildNumber Condition="'$(GitBuildNumber)' == ''">0</GitBuildNumber>
+      <GitCommitHash Condition="'$(GitCommitHash)' == ''">unknown</GitCommitHash>
+      <GitFullVersion>$(GitVersionTag)-$(GitBuildNumber)-$(GitCommitHash)</GitFullVersion>
+      <GitNumericVersion>$(GitVersionTag).$(GitBuildNumber).0</GitNumericVersion>
+      <Version>$(GitVersionTag).$(GitBuildNumber)</Version>
+      <InformationalVersion>$(GitFullVersion)</InformationalVersion>
+      <FileVersion>$(GitNumericVersion)</FileVersion>
+      <AssemblyVersion>$(GitVersionTag).0.0</AssemblyVersion>
+    </PropertyGroup>
+  </Target>
+
+  <Target Name="GenerateGitVersionInfo" BeforeTargets="CoreCompile" DependsOnTargets="PrepareGitVersion">
+    <MakeDir Directories="$(BaseIntermediateOutputPath)" />
+    <ItemGroup>
+      <_GitVersionInfoLine Include="// &lt;auto-generated /&gt;" />
+      <_GitVersionInfoLine Include="[assembly: System.Reflection.AssemblyVersionAttribute(&quot;$(AssemblyVersion)&quot;)]" />
+      <_GitVersionInfoLine Include="[assembly: System.Reflection.AssemblyFileVersionAttribute(&quot;$(FileVersion)&quot;)]" />
+      <_GitVersionInfoLine Include="[assembly: System.Reflection.AssemblyInformationalVersionAttribute(&quot;$(InformationalVersion)&quot;)]" />
+      <_GitVersionInfoLine Include="namespace RDesigner%3B" />
+      <_GitVersionInfoLine Include="public static class BuildInfo" />
+      <_GitVersionInfoLine Include="{" />
+      <_GitVersionInfoLine Include="    public const string Version = &quot;$(GitVersionTag)&quot;%3B" />
+      <_GitVersionInfoLine Include="    public const string Build = &quot;$(GitBuildNumber)&quot;%3B" />
+      <_GitVersionInfoLine Include="    public const string Hash = &quot;$(GitCommitHash)&quot;%3B" />
+      <_GitVersionInfoLine Include="    public const string FullVersion = &quot;$(GitFullVersion)&quot;%3B" />
+      <_GitVersionInfoLine Include="}" />
+    </ItemGroup>
+
+    <WriteLinesToFile
+      File="$(GeneratedGitVersionFile)"
+      Overwrite="true"
+      Lines="@(_GitVersionInfoLine)" />
+
+    <ItemGroup>
+      <Compile Include="$(GeneratedGitVersionFile)" />
+    </ItemGroup>
+  </Target>
+</Project>

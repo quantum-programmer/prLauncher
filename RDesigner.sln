@@ -1,0 +1,25 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.11.35222.181
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "RDesigner", "RDesigner\RDesigner.csproj", "{55EB56C2-12A3-42D6-80B0-26905FC0B685}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{55EB56C2-12A3-42D6-80B0-26905FC0B685}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{55EB56C2-12A3-42D6-80B0-26905FC0B685}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{55EB56C2-12A3-42D6-80B0-26905FC0B685}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{55EB56C2-12A3-42D6-80B0-26905FC0B685}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {B81D3A86-474A-45FC-94A9-2384BCEA7F48}
+	EndGlobalSection
+EndGlobal

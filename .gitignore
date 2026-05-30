@@ -1,0 +1,57 @@
+# Игнорировать файлы сборки и запуска
+/bin/
+/obj/
+/publish/
+
+# Игнорировать файлы пользовательских настроек IDE
+/.vs/
+/.vscode/
+/*.user
+/*.suo
+/*.userprefs
+
+# Игнорировать файлы пакетов NuGet
+/packages/
+/*.nupkg
+/nuget.exe
+
+# Игнорировать кэши и временные файлы
+/.idea/
+/.ionide/
+/.fuse/
+/.localhistory/
+
+# €гнорировать конкретные файлы (если нужно)
+/.vs/RDesigner/v17/.futdcache.v2
+/.vs/RDesigner/v17/.suo
+/.vs/RDesigner/v17/DocumentLayout.json
+
+# Игнорировать логи и отчеты
+/*.log
+/*.log*
+/*.tmp
+/*.cache
+
+# Игнорировать специфичные для Avalonia файлы
+/avalonia-assets/
+/avalonia-cache/
+
+# Игнорировать файлы, созданные тестами
+/TestResults/
+
+# Игнорировать файлы резервных копий
+/*.bak
+/*.backup
+
+# Игнорировать файлы, специфичные для macOS
+.DS_Store
+
+# Игнорировать файлы, специфичные для Linux/Unix
+*~
+.*.swp
+*.swp
+
+# Игнорировать файлы, специфичные для Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
