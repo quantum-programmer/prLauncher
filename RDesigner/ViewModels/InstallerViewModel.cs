@@ -7,6 +7,7 @@ using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Platform.Storage;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using RDesigner.Resources;
 using RDesigner.Services;
 
 namespace RDesigner.ViewModels;
@@ -15,6 +16,7 @@ public partial class InstallerViewModel : ViewModelBase
 {
     private readonly NativePostgresInstaller installer;
     private readonly StringBuilder logBuilder = new();
+    private Func<string> statusProvider = () => AppStrings.InstallerReadyStatus;
 
     [ObservableProperty]
     [NotifyCanExecuteChangedFor(nameof(InstallPostgresCommand))]
@@ -23,7 +25,7 @@ public partial class InstallerViewModel : ViewModelBase
     private bool isBusy;
 
     [ObservableProperty]
-    private string status = "Ready to install PostgreSQL 16.14";
+    private string status = AppStrings.InstallerReadyStatus;
 
     [ObservableProperty]
     private string logText = string.Empty;
@@ -34,25 +36,27 @@ public partial class InstallerViewModel : ViewModelBase
     public InstallerViewModel(NativePostgresInstaller installer)
     {
         this.installer = installer;
-        AppendLog("Put the PostgreSQL 16.14 Windows installer into the Installers folder next to the application.");
+        LocalizationManager.LanguageChanged += OnLanguageChanged;
+        SetStatus(() => AppStrings.InstallerReadyStatus);
+        AppendLog(AppStrings.InstallerPutInstallerLog);
     }
 
     [RelayCommand(CanExecute = nameof(CanRun))]
     private async Task InstallPostgresAsync()
     {
-        await RunAsync("PostgreSQL installation", log => installer.InstallAsync(WindowsInstallDirectory, log));
+        await RunAsync(() => AppStrings.InstallerInstallOperation, log => installer.InstallAsync(WindowsInstallDirectory, log));
     }
 
     [RelayCommand(CanExecute = nameof(CanRun))]
     private async Task RunPostgresWizardAsync()
     {
-        await RunAsync("PostgreSQL GUI installer", log => installer.RunInteractiveWindowsInstallerAsync(WindowsInstallDirectory, log));
+        await RunAsync(() => AppStrings.InstallerWizardOperation, log => installer.RunInteractiveWindowsInstallerAsync(WindowsInstallDirectory, log));
     }
 
     [RelayCommand(CanExecute = nameof(CanRun))]
     private async Task CheckPostgresAsync()
     {
-        await RunAsync("PostgreSQL check", log => installer.CheckAsync(WindowsInstallDirectory, log));
+        await RunAsync(() => AppStrings.InstallerCheckOperation, log => installer.CheckAsync(WindowsInstallDirectory, log));
     }
 
     [RelayCommand(CanExecute = nameof(CanRun))]
@@ -63,14 +67,14 @@ public partial class InstallerViewModel : ViewModelBase
             if (Application.Current?.ApplicationLifetime is not IClassicDesktopStyleApplicationLifetime desktop ||
                 desktop.MainWindow is null)
             {
-                AppendLog("Main window was not found. Folder dialog cannot be opened.");
+                AppendLog(AppStrings.InstallerMainWindowNotFoundLog);
                 return;
             }
 
             var startLocation = await desktop.MainWindow.StorageProvider.TryGetFolderFromPathAsync(WindowsInstallDirectory);
             var folders = await desktop.MainWindow.StorageProvider.OpenFolderPickerAsync(new FolderPickerOpenOptions
             {
-                Title = "Select PostgreSQL installation folder",
+                Title = AppStrings.InstallerSelectPostgresFolderTitle,
                 AllowMultiple = false,
                 SuggestedStartLocation = startLocation
             });
@@ -80,13 +84,13 @@ public partial class InstallerViewModel : ViewModelBase
             if (!string.IsNullOrWhiteSpace(selectedDirectory))
             {
                 WindowsInstallDirectory = selectedDirectory;
-                AppendLog($"Install directory selected: {selectedDirectory}");
+                AppendLog(AppStrings.InstallerDirectorySelectedLog.Replace("{Directory}", selectedDirectory, StringComparison.Ordinal));
             }
         }
         catch (Exception ex)
         {
-            Status = "Error";
-            AppendLog($"Folder selection failed: {ex.Message}");
+            SetStatus(() => AppStrings.InstallerErrorStatus);
+            AppendLog(AppStrings.InstallerFolderSelectionFailedLog.Replace("{Message}", ex.Message, StringComparison.Ordinal));
         }
     }
 
@@ -98,17 +102,17 @@ public partial class InstallerViewModel : ViewModelBase
             if (Application.Current?.ApplicationLifetime is not IClassicDesktopStyleApplicationLifetime desktop ||
                 desktop.MainWindow?.Clipboard is null)
             {
-                AppendLog("Clipboard is not available.");
+                AppendLog(AppStrings.InstallerClipboardUnavailableLog);
                 return;
             }
 
             await desktop.MainWindow.Clipboard.SetTextAsync(LogText);
-            AppendLog("Log copied to clipboard.");
+            AppendLog(AppStrings.InstallerLogCopiedLog);
         }
         catch (Exception ex)
         {
-            Status = "Error";
-            AppendLog($"Copy log failed: {ex.Message}");
+            SetStatus(() => AppStrings.InstallerErrorStatus);
+            AppendLog(AppStrings.InstallerCopyLogFailedLog.Replace("{Message}", ex.Message, StringComparison.Ordinal));
         }
     }
 
@@ -117,22 +121,23 @@ public partial class InstallerViewModel : ViewModelBase
         return !IsBusy;
     }
 
-    private async Task RunAsync(string operationName, Func<Action<string>, Task> operation)
+    private async Task RunAsync(Func<string> operationNameProvider, Func<Action<string>, Task> operation)
     {
         IsBusy = true;
-        Status = operationName;
+        SetStatus(operationNameProvider);
+        var operationName = operationNameProvider();
         AppendLog(string.Empty);
         AppendLog($"=== {operationName} ===");
 
         try
         {
             await operation(AppendLog);
-            Status = "Operation completed";
-            AppendLog("Done.");
+            SetStatus(() => AppStrings.InstallerCompletedStatus);
+            AppendLog(AppStrings.InstallerDoneLog);
         }
         catch (Exception ex)
         {
-            Status = "Error";
+            SetStatus(() => AppStrings.InstallerErrorStatus);
             AppendLog(ex.Message);
         }
         finally
@@ -153,5 +158,16 @@ public partial class InstallerViewModel : ViewModelBase
         }
 
         LogText = logBuilder.ToString();
+    }
+
+    private void SetStatus(Func<string> provider)
+    {
+        statusProvider = provider;
+        Status = statusProvider();
+    }
+
+    private void OnLanguageChanged(object? sender, EventArgs e)
+    {
+        Status = statusProvider();
     }
 }

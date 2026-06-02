@@ -6,20 +6,45 @@
 
   <Target Name="PrepareGitVersion" BeforeTargets="GetAssemblyAttributes;GenerateAssemblyInfo;CoreGenerateAssemblyInfo">
     <Exec
-      Command="git describe HEAD --tags --long"
+      Command="git -c safe.directory=&quot;$(GitVersionWorkingDirectory)&quot; describe HEAD --tags --long --always"
       WorkingDirectory="$(GitVersionWorkingDirectory)"
       ConsoleToMSBuild="true"
+      StandardOutputImportance="Low"
+      StandardErrorImportance="Low"
       IgnoreExitCode="true">
       <Output TaskParameter="ConsoleOutput" PropertyName="GitDescribeRaw" />
       <Output TaskParameter="ExitCode" PropertyName="GitDescribeExitCode" />
     </Exec>
 
+    <Exec
+      Command="git -c safe.directory=&quot;$(GitVersionWorkingDirectory)&quot; rev-list --count HEAD"
+      WorkingDirectory="$(GitVersionWorkingDirectory)"
+      ConsoleToMSBuild="true"
+      StandardOutputImportance="Low"
+      StandardErrorImportance="Low"
+      IgnoreExitCode="true">
+      <Output TaskParameter="ConsoleOutput" PropertyName="GitCommitCountRaw" />
+      <Output TaskParameter="ExitCode" PropertyName="GitCommitCountExitCode" />
+    </Exec>
+
+    <Exec
+      Command="git -c safe.directory=&quot;$(GitVersionWorkingDirectory)&quot; rev-parse --short HEAD"
+      WorkingDirectory="$(GitVersionWorkingDirectory)"
+      ConsoleToMSBuild="true"
+      StandardOutputImportance="Low"
+      StandardErrorImportance="Low"
+      IgnoreExitCode="true">
+      <Output TaskParameter="ConsoleOutput" PropertyName="GitShortHashRaw" />
+      <Output TaskParameter="ExitCode" PropertyName="GitShortHashExitCode" />
+    </Exec>
+
     <PropertyGroup>
       <GitDescribe Condition="'$(GitDescribeExitCode)' == '0'">$([System.String]::Copy('$(GitDescribeRaw)').Trim())</GitDescribe>
-      <GitDescribe Condition="'$(GitDescribe)' == ''">0.0-0-gunknown</GitDescribe>
       <GitVersionTag>$([System.Text.RegularExpressions.Regex]::Match('$(GitDescribe)', '^(.+)-([0-9]+)-g(.+)$').Groups[1].Value)</GitVersionTag>
       <GitBuildNumber>$([System.Text.RegularExpressions.Regex]::Match('$(GitDescribe)', '^(.+)-([0-9]+)-g(.+)$').Groups[2].Value)</GitBuildNumber>
       <GitCommitHash>$([System.Text.RegularExpressions.Regex]::Match('$(GitDescribe)', '^(.+)-([0-9]+)-g(.+)$').Groups[3].Value)</GitCommitHash>
+      <GitBuildNumber Condition="'$(GitBuildNumber)' == '' And '$(GitCommitCountExitCode)' == '0'">$([System.String]::Copy('$(GitCommitCountRaw)').Trim())</GitBuildNumber>
+      <GitCommitHash Condition="'$(GitCommitHash)' == '' And '$(GitShortHashExitCode)' == '0'">$([System.String]::Copy('$(GitShortHashRaw)').Trim())</GitCommitHash>
       <GitVersionTag Condition="'$(GitVersionTag)' == ''">0.0</GitVersionTag>
       <GitBuildNumber Condition="'$(GitBuildNumber)' == ''">0</GitBuildNumber>
       <GitCommitHash Condition="'$(GitCommitHash)' == ''">unknown</GitCommitHash>
