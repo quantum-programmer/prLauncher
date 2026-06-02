@@ -1,9 +1,10 @@
-namespace RDesigner.Resources;
+namespace Pyramid.Resources;
 
 public static class EnglishAppStrings
 {
     public const string ApplicationStarted = "Application started";
     public const string ApplicationFailed = "The application exited with an error";
+    public const string StartupErrorTitle = "Startup error";
     public const string StartupDatabaseSettingsTitle = "Database settings error";
     public const string InvalidDatabaseSettings = "Invalid database connection settings.";
     public const string InvalidDatabaseSettingsLog = "Invalid database connection settings: {Errors}";
@@ -119,6 +120,13 @@ public static class EnglishAppStrings
     public const string InstallerNoFreeTcp = "No free TCP port was found for PostgreSQL.";
     public const string InstallerCommandFailed = "Command failed with exit code {ExitCode}: {FileName}";
     public const string InstallerTraceTailLog = "Last lines from {Path}:";
+    public const string InstallerScriptRegisteringServiceLog = "Registering service {ServiceName}";
+    public const string InstallerScriptGrantingNetworkServicePermissionsLog = "Granting NetworkService permissions";
+    public const string InstallerScriptIcaclsFailed = "icacls failed with exit code {ExitCode}";
+    public const string InstallerScriptPgCtlRegisterFailed = "pg_ctl register failed with exit code {ExitCode}";
+    public const string InstallerScriptStartingServiceLog = "Starting service {ServiceName}";
+    public const string InstallerScriptServiceStatusLog = "Service status:";
+    public const string InstallerScriptServiceStartedLog = "Service {ServiceName} started";
 
     public const string CreateReportTitle = "Create report";
     public const string CreateReportDialogTitle = "Report creation";

@@ -8,7 +8,7 @@ using System.Linq;
 using System.Reflection;
 using Serilog;
 
-namespace RDesigner.Resources;
+namespace Pyramid.Resources;
 
 public enum AppLanguage
 {
@@ -19,7 +19,7 @@ public enum AppLanguage
 public static class LocalizationManager
 {
     private const AppLanguage DefaultLanguage = AppLanguage.Russian;
-    private const string SettingsDirectoryName = "RDesigner";
+    private const string SettingsDirectoryName = "Pyramid";
     private const string LanguageSettingsFileName = "language.txt";
 
     private static readonly Dictionary<string, FieldInfo> ActiveStringFields = typeof(AppStrings)

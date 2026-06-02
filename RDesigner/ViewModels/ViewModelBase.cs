@@ -1,6 +1,6 @@
 ﻿using CommunityToolkit.Mvvm.ComponentModel;
 
-namespace RDesigner.ViewModels
+namespace Pyramid.ViewModels
 {
     public class ViewModelBase : ObservableObject
     {

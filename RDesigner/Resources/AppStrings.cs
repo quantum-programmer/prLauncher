@@ -1,9 +1,10 @@
-namespace RDesigner.Resources;
+namespace Pyramid.Resources;
 
 public static class AppStrings
 {
     public static string ApplicationStarted = "Запуск приложения";
     public static string ApplicationFailed = "Приложение завершилось с ошибкой";
+    public static string StartupErrorTitle = "Ошибка запуска";
     public static string StartupDatabaseSettingsTitle = "Ошибка настройки базы данных";
     public static string InvalidDatabaseSettings = "Некорректные настройки подключения к базе данных.";
     public static string InvalidDatabaseSettingsLog = "Некорректные настройки подключения к базе данных: {Errors}";
@@ -119,6 +120,13 @@ public static class AppStrings
     public static string InstallerNoFreeTcp = "Для PostgreSQL не найден свободный TCP-порт.";
     public static string InstallerCommandFailed = "Команда завершилась с кодом {ExitCode}: {FileName}";
     public static string InstallerTraceTailLog = "Последние строки из {Path}:";
+    public static string InstallerScriptRegisteringServiceLog = "Регистрация службы {ServiceName}";
+    public static string InstallerScriptGrantingNetworkServicePermissionsLog = "Выдача прав пользователю NetworkService";
+    public static string InstallerScriptIcaclsFailed = "icacls завершился с кодом {ExitCode}";
+    public static string InstallerScriptPgCtlRegisterFailed = "pg_ctl register завершился с кодом {ExitCode}";
+    public static string InstallerScriptStartingServiceLog = "Запуск службы {ServiceName}";
+    public static string InstallerScriptServiceStatusLog = "Статус службы:";
+    public static string InstallerScriptServiceStartedLog = "Служба {ServiceName} запущена";
 
     public static string CreateReportTitle = "Создать отчет";
     public static string CreateReportDialogTitle = "Создание отчета";

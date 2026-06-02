@@ -13,9 +13,9 @@ using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Win32;
-using RDesigner.Resources;
+using Pyramid.Resources;
 
-namespace RDesigner.Services;
+namespace Pyramid.Services;
 
 public sealed class NativePostgresInstaller
 {
@@ -398,25 +398,34 @@ public sealed class NativePostgresInstaller
         Directory.CreateDirectory(Path.GetDirectoryName(elevatedLogPath)!);
 
         var scriptPath = Path.Combine(Path.GetTempPath(), $"oilctrl-postgres-service-{Guid.NewGuid():N}.ps1");
+        var registerServiceLog = EscapePowerShellSingleQuotedString(Format(AppStrings.InstallerScriptRegisteringServiceLog, ("ServiceName", serviceName)));
+        var grantPermissionsLog = EscapePowerShellSingleQuotedString(AppStrings.InstallerScriptGrantingNetworkServicePermissionsLog);
+        var icaclsFailed = EscapePowerShellSingleQuotedString(AppStrings.InstallerScriptIcaclsFailed);
+        var pgCtlRegisterFailed = EscapePowerShellSingleQuotedString(AppStrings.InstallerScriptPgCtlRegisterFailed);
+        var startingServiceLog = EscapePowerShellSingleQuotedString(Format(AppStrings.InstallerScriptStartingServiceLog, ("ServiceName", serviceName)));
+        var serviceStatusLog = EscapePowerShellSingleQuotedString(AppStrings.InstallerScriptServiceStatusLog);
+        var serviceStartedLog = EscapePowerShellSingleQuotedString(Format(AppStrings.InstallerScriptServiceStartedLog, ("ServiceName", serviceName)));
         var script = $$"""
             $ErrorActionPreference = 'Stop'
+            [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+            $OutputEncoding = [System.Text.Encoding]::UTF8
             $log = '{{EscapePowerShellSingleQuotedString(elevatedLogPath)}}'
-            "Registering service {{serviceName}}" | Out-File -FilePath $log -Encoding utf8
-            "Granting NetworkService permissions" | Out-File -FilePath $log -Encoding utf8 -Append
+            '{{registerServiceLog}}' | Out-File -FilePath $log -Encoding utf8
+            '{{grantPermissionsLog}}' | Out-File -FilePath $log -Encoding utf8 -Append
             $icaclsOutput = & icacls '{{EscapePowerShellSingleQuotedString(installDir)}}' /grant 'NT AUTHORITY\NetworkService:(OI)(CI)F' /T /Q 2>&1
             $icaclsExitCode = $LASTEXITCODE
             $icaclsOutput | Out-File -FilePath $log -Encoding utf8 -Append
-            if ($icaclsExitCode -ne 0) { throw "icacls failed with exit code $icaclsExitCode" }
+            if ($icaclsExitCode -ne 0) { throw ('{{icaclsFailed}}' -replace '\{ExitCode\}', $icaclsExitCode) }
             $registerOutput = & '{{EscapePowerShellSingleQuotedString(pgCtlPath)}}' register -N '{{EscapePowerShellSingleQuotedString(serviceName)}}' -D '{{EscapePowerShellSingleQuotedString(dataDir)}}' -S auto -U 'NT AUTHORITY\NetworkService' 2>&1
             $registerExitCode = $LASTEXITCODE
             $registerOutput | Out-File -FilePath $log -Encoding utf8 -Append
-            if ($registerExitCode -ne 0) { throw "pg_ctl register failed with exit code $registerExitCode" }
-            "Starting service {{serviceName}}" | Out-File -FilePath $log -Encoding utf8 -Append
+            if ($registerExitCode -ne 0) { throw ('{{pgCtlRegisterFailed}}' -replace '\{ExitCode\}', $registerExitCode) }
+            '{{startingServiceLog}}' | Out-File -FilePath $log -Encoding utf8 -Append
             Start-Service -Name '{{EscapePowerShellSingleQuotedString(serviceName)}}'
             $service = Get-Service -Name '{{EscapePowerShellSingleQuotedString(serviceName)}}'
             $service.WaitForStatus('Running', '00:00:30')
-            "Service status: $($service.Status)" | Out-File -FilePath $log -Encoding utf8 -Append
-            "Service {{serviceName}} started" | Out-File -FilePath $log -Encoding utf8 -Append
+            '{{serviceStatusLog}}' + ' ' + $service.Status | Out-File -FilePath $log -Encoding utf8 -Append
+            '{{serviceStartedLog}}' | Out-File -FilePath $log -Encoding utf8 -Append
             """;
 
         await File.WriteAllTextAsync(scriptPath, script, Utf8NoBom, cancellationToken);
@@ -684,14 +693,18 @@ public sealed class NativePostgresInstaller
         Directory.CreateDirectory(Path.GetDirectoryName(elevatedLogPath)!);
 
         var scriptPath = Path.Combine(Path.GetTempPath(), $"oilctrl-postgres-start-{Guid.NewGuid():N}.ps1");
+        var startingServiceLog = EscapePowerShellSingleQuotedString(Format(AppStrings.InstallerScriptStartingServiceLog, ("ServiceName", serviceName)));
+        var serviceStatusLog = EscapePowerShellSingleQuotedString(AppStrings.InstallerScriptServiceStatusLog);
         var script = $$"""
             $ErrorActionPreference = 'Stop'
+            [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+            $OutputEncoding = [System.Text.Encoding]::UTF8
             $log = '{{EscapePowerShellSingleQuotedString(elevatedLogPath)}}'
-            "Starting service {{serviceName}}" | Out-File -FilePath $log -Encoding utf8
+            '{{startingServiceLog}}' | Out-File -FilePath $log -Encoding utf8
             Start-Service -Name '{{EscapePowerShellSingleQuotedString(serviceName)}}'
             $service = Get-Service -Name '{{EscapePowerShellSingleQuotedString(serviceName)}}'
             $service.WaitForStatus('Running', '00:00:30')
-            "Service status: $($service.Status)" | Out-File -FilePath $log -Encoding utf8 -Append
+            '{{serviceStatusLog}}' + ' ' + $service.Status | Out-File -FilePath $log -Encoding utf8 -Append
             """;
 
         await File.WriteAllTextAsync(scriptPath, script, Utf8NoBom, cancellationToken);
@@ -989,7 +1002,9 @@ public sealed class NativePostgresInstaller
             Verb = runAsAdmin && OperatingSystem.IsWindows() ? "runas" : string.Empty,
             RedirectStandardOutput = !runAsAdmin,
             RedirectStandardError = !runAsAdmin,
-            CreateNoWindow = !runAsAdmin
+            CreateNoWindow = !runAsAdmin,
+            StandardOutputEncoding = !runAsAdmin && OperatingSystem.IsWindows() ? Encoding.UTF8 : null,
+            StandardErrorEncoding = !runAsAdmin && OperatingSystem.IsWindows() ? Encoding.UTF8 : null
         };
 
         foreach (var argument in arguments)

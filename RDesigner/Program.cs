@@ -1,156 +1,128 @@
-﻿using Avalonia;
-using Microsoft.Extensions.Configuration;
-using Microsoft.Extensions.Hosting;
-using Microsoft.Extensions.Options;
-using Serilog;
-//using Serilog.Sinks.Console;
-using Serilog.Sinks.File;
-using Serilog.Events;
 using System;
 using System.Diagnostics;
 using System.IO;
-using System.Linq;
 using System.Runtime.InteropServices;
-using RDesigner.Resources;
+using Avalonia;
+using Microsoft.Extensions.DependencyInjection;
+using Pyramid.Resources;
+using Pyramid.Services;
+using Serilog;
+using Serilog.Events;
 
-namespace RDesigner
+namespace Pyramid;
+
+internal sealed class Program
 {
-    internal sealed class Program
+    [STAThread]
+    public static void Main(string[] args)
     {
-        // Initialization code. Don't use any Avalonia, third-party APIs or any
-        // SynchronizationContext-reliant code before AppMain is called: things aren't initialized
-        // yet and stuff might break.
-        [STAThread]
-        public static void Main(string[] args)
+        Log.Logger = new LoggerConfiguration()
+            .MinimumLevel.Debug()
+            .WriteTo.Console()
+            .WriteTo.File(
+                path: Path.Combine(AppContext.BaseDirectory, "logs", "Pyramid.log"),
+                rollingInterval: RollingInterval.Day,
+                fileSizeLimitBytes: 10 * 1024 * 1024,
+                rollOnFileSizeLimit: true,
+                retainedFileCountLimit: null,
+                restrictedToMinimumLevel: LogEventLevel.Information,
+                outputTemplate: "{Timestamp:yyyy-MM-dd HH:mm:ss.fff zzz} [{Level:u3}] {Message:lj}{NewLine}{Exception}")
+            .CreateLogger();
+
+        try
         {
-            // Настройка Serilog
-            Log.Logger = new LoggerConfiguration()
-                .MinimumLevel.Debug() // Минимальный уровень логирования
-                .WriteTo.Console() // Логи в консоль (опционально)
-                .WriteTo.File(
-                    path: Path.Combine(AppContext.BaseDirectory, "logs", "RDesigner.log"), // Путь к файлу логов
-                    rollingInterval: RollingInterval.Day, // Ротация логов по дням
-                    fileSizeLimitBytes: 10 * 1024 * 1024, // 10 МБ
-                    rollOnFileSizeLimit: true, // Создавать новый файл при превышении размера
-                    retainedFileCountLimit: null, // Не удалять старые файлы логов автоматически
-                    restrictedToMinimumLevel: LogEventLevel.Information, // Минимальный уровень для файла
-                    outputTemplate: "{Timestamp:yyyy-MM-dd HH:mm:ss.fff zzz} [{Level:u3}] {Message:lj}{NewLine}{Exception}" // Формат логов
-                )
-                .CreateLogger();
+            LocalizationManager.InitializeResources();
+            Log.Information(AppStrings.ApplicationStarted);
 
-            try
-            {
-                LocalizationManager.InitializeResources();
-                Log.Information(AppStrings.ApplicationStarted);
-
-                App.Host = CreateHostBuilder(args).Build();
-                App.Host.Start();
-                BuildAvaloniaApp().StartWithClassicDesktopLifetime(args);
-            }
-            catch (OptionsValidationException ex)
-            {
-                var failure = ex.Failures.FirstOrDefault() ?? AppStrings.InvalidDatabaseSettings;
-                var message = string.Format(AppStrings.DatabaseConnectionFailedFormat, failure);
-
-                Log.Fatal(
-                    ex,
-                    AppStrings.InvalidDatabaseSettingsLog,
-                    string.Join(" ", ex.Failures));
-                ShowStartupError(AppStrings.StartupDatabaseSettingsTitle, message);
-            }
-            catch (Exception ex)
-            {
-                Log.Fatal(ex, AppStrings.ApplicationFailed);
-            }
-            finally
-            {
-                App.Host?.StopAsync().GetAwaiter().GetResult();
-                App.Host?.Dispose();
-                Log.CloseAndFlush(); // Закрыть и очистить логгер
-            }
+            App.Services = CreateServices();
+            BuildAvaloniaApp().StartWithClassicDesktopLifetime(args);
         }
-
-        private static void ShowStartupError(string title, string message)
+        catch (Exception ex)
         {
-            if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
-            {
-                MessageBox(IntPtr.Zero, message, title, 0x00000010);
-                return;
-            }
-
-            if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux) && ShowLinuxStartupError(title, message))
-            {
-                return;
-            }
-                        
-            Log.Information($"{title}: {message}");
+            Log.Fatal(ex, AppStrings.ApplicationFailed);
+            ShowStartupError(AppStrings.StartupErrorTitle, ex.Message);
         }
-
-        private static bool ShowLinuxStartupError(string title, string message)
+        finally
         {
-            if (string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("DISPLAY")) &&
-                string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("WAYLAND_DISPLAY")))
+            if (App.Services is IDisposable disposable)
             {
-                return false;
+                disposable.Dispose();
             }
 
-            return TryShowLinuxDialog("zenity", "--error", "--title", title, "--text", message)
-                || TryShowLinuxDialog("kdialog", "--title", title, "--error", message)
-                || TryShowLinuxDialog("xmessage", "-center", "-title", title, message);
+            Log.CloseAndFlush();
         }
-
-        private static bool TryShowLinuxDialog(string fileName, params string[] arguments)
-        {
-            try
-            {
-                using var process = new Process
-                {
-                    StartInfo = new ProcessStartInfo
-                    {
-                        FileName = fileName,
-                        UseShellExecute = false
-                    }
-                };
-
-                foreach (var argument in arguments)
-                {
-                    process.StartInfo.ArgumentList.Add(argument);
-                }
-
-                process.Start();
-                process.WaitForExit();
-                return true;
-            }
-            catch (Exception ex) when (ex is InvalidOperationException or System.ComponentModel.Win32Exception)
-            {
-                return false;
-            }
-        }
-
-        [DllImport("user32.dll", CharSet = CharSet.Unicode)]
-        private static extern int MessageBox(IntPtr hWnd, string text, string caption, uint type);
-
-        private static IHostBuilder CreateHostBuilder(string[] args) =>
-            Host.CreateDefaultBuilder(args)
-                .ConfigureAppConfiguration((context, configuration) =>
-                {
-                    configuration.SetBasePath(AppContext.BaseDirectory);
-                    configuration.AddJsonFile("appsettings.json", optional: false, reloadOnChange: true);
-                    configuration.AddJsonFile(
-                        $"appsettings.{context.HostingEnvironment.EnvironmentName}.json",
-                        optional: true,
-                        reloadOnChange: true);
-                })
-                .ConfigureServices((context, services) =>
-                {
-                    new Startup().ConfigureServices(services, context.Configuration);
-                });
-
-        // Avalonia configuration, don't remove; also used by visual designer.
-        public static AppBuilder BuildAvaloniaApp()
-            => AppBuilder.Configure<App>()
-                .UsePlatformDetect()
-                .WithInterFont()
-                .LogToTrace();
     }
+
+    private static ServiceProvider CreateServices()
+    {
+        var services = new ServiceCollection();
+        Startup.ConfigureServices(services);
+        return services.BuildServiceProvider();
+    }
+
+    private static void ShowStartupError(string title, string message)
+    {
+        if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+        {
+            MessageBox(IntPtr.Zero, message, title, 0x00000010);
+            return;
+        }
+
+        if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux) && ShowLinuxStartupError(title, message))
+        {
+            return;
+        }
+
+        Log.Information("{Title}: {Message}", title, message);
+    }
+
+    private static bool ShowLinuxStartupError(string title, string message)
+    {
+        if (string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("DISPLAY")) &&
+            string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("WAYLAND_DISPLAY")))
+        {
+            return false;
+        }
+
+        return TryShowLinuxDialog("zenity", "--error", "--title", title, "--text", message)
+            || TryShowLinuxDialog("kdialog", "--title", title, "--error", message)
+            || TryShowLinuxDialog("xmessage", "-center", "-title", title, message);
+    }
+
+    private static bool TryShowLinuxDialog(string fileName, params string[] arguments)
+    {
+        try
+        {
+            using var process = new Process
+            {
+                StartInfo = new ProcessStartInfo
+                {
+                    FileName = fileName,
+                    UseShellExecute = false
+                }
+            };
+
+            foreach (var argument in arguments)
+            {
+                process.StartInfo.ArgumentList.Add(argument);
+            }
+
+            process.Start();
+            process.WaitForExit();
+            return true;
+        }
+        catch (Exception ex) when (ex is InvalidOperationException or System.ComponentModel.Win32Exception)
+        {
+            return false;
+        }
+    }
+
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+    private static extern int MessageBox(IntPtr hWnd, string text, string caption, uint type);
+
+    public static AppBuilder BuildAvaloniaApp()
+        => AppBuilder.Configure<App>()
+            .UsePlatformDetect()
+            .WithInterFont()
+            .LogToTrace();
 }

@@ -5,9 +5,9 @@ using System;
 using System.Diagnostics;
 using System.IO;
 using System.Runtime.InteropServices;
-using RDesigner.Resources;
+using Pyramid.Resources;
 
-namespace RDesigner.Views
+namespace Pyramid.Views
 {
     public partial class MainWindow : Window
     {        

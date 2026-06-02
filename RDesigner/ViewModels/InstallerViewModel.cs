@@ -7,10 +7,10 @@ using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Platform.Storage;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
-using RDesigner.Resources;
-using RDesigner.Services;
+using Pyramid.Resources;
+using Pyramid.Services;
 
-namespace RDesigner.ViewModels;
+namespace Pyramid.ViewModels;
 
 public partial class InstallerViewModel : ViewModelBase
 {

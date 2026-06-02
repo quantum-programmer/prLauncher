@@ -1,10 +1,10 @@
 using Avalonia.Controls;
 using Avalonia.Input;
-using RDesigner.Resources;
+using Pyramid.Resources;
 using System.Diagnostics;
 using System.Reflection;
 
-namespace RDesigner.Views
+namespace Pyramid.Views
 {
     public partial class AboutWindow : Window
     {

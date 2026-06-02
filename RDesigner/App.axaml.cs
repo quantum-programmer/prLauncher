@@ -1,41 +1,34 @@
-﻿using Avalonia;
-using Avalonia.Controls.ApplicationLifetimes;
-using Avalonia.Data.Core;
-using Avalonia.Data.Core.Plugins;
-using Avalonia.Markup.Xaml;
-using RDesigner.Views;
 using System;
+using Avalonia;
+using Avalonia.Controls.ApplicationLifetimes;
+using Avalonia.Markup.Xaml;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Hosting;
-using RDesigner.Resources;
+using Pyramid.Resources;
+using Pyramid.Views;
 
-namespace RDesigner
+namespace Pyramid;
+
+public partial class App : Application
 {
-    public partial class App : Application
+    public static IServiceProvider? Services { get; set; }
+
+    public override void Initialize()
     {
-        public static IHost? Host { get; set; }
-        public IServiceProvider _serviceProvider = null!;
+        AvaloniaXamlLoader.Load(this);
+        LocalizationManager.InitializeResources();
+    }
 
-        public override void Initialize()
+    public override void OnFrameworkInitializationCompleted()
+    {
+        var serviceProvider = Services
+            ?? throw new InvalidOperationException("Application services are not initialized.");
+
+        if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
         {
-            AvaloniaXamlLoader.Load(this);
-            LocalizationManager.InitializeResources();
+            desktop.MainWindow = serviceProvider.GetRequiredService<MainWindow>();
+            desktop.MainWindow.Content = serviceProvider.GetRequiredService<InstallerView>();
         }
 
-        public override void OnFrameworkInitializationCompleted()
-        {
-            _serviceProvider = Host?.Services
-                ?? throw new InvalidOperationException("Application host is not initialized.");
-
-            if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
-            {
-                desktop.MainWindow = new MainWindow
-                {
-                    Content = _serviceProvider.GetRequiredService<InstallerView>()
-                };
-            }
-
-            base.OnFrameworkInitializationCompleted();
-        }
+        base.OnFrameworkInitializationCompleted();
     }
 }
