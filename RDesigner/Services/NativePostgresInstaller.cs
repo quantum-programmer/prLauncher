@@ -2,32 +2,43 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
+using System.IO.Compression;
 using System.Linq;
+using System.Net;
+using System.Net.NetworkInformation;
+using System.Net.Sockets;
 using System.Runtime.InteropServices;
 using System.Text;
+using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
+using Microsoft.Win32;
 
 namespace RDesigner.Services;
 
 public sealed class NativePostgresInstaller
 {
-    public const string RequiredVersion = "16.2";
+    public const string RequiredVersion = "16.14";
     public const string DatabaseName = "OilCtrl";
     public const string SuperUser = "postgres";
     public const string SuperPassword = "j06gOuqDHwWkvpWf";
-    public const int ServerPort = 5433;
+    public const int PreferredServerPort = 5433;
+
+    private static readonly Encoding Utf8NoBom = new UTF8Encoding(false);
 
     private readonly string initSqlPath = Path.Combine(AppContext.BaseDirectory, "Installers", "oilctrl-init.sql");
 
-    public async Task InstallAsync(Action<string> log, CancellationToken cancellationToken = default)
+    public async Task InstallAsync(
+        string? windowsInstallDirectory,
+        Action<string> log,
+        CancellationToken cancellationToken = default)
     {
         log($"OS: {RuntimeInformation.OSDescription}");
         log($"Target PostgreSQL version: {RequiredVersion}");
 
         if (OperatingSystem.IsWindows())
         {
-            await InstallOnWindowsAsync(log, cancellationToken);
+            await InstallOnWindowsAsync(windowsInstallDirectory, log, cancellationToken);
             return;
         }
 
@@ -40,9 +51,57 @@ public sealed class NativePostgresInstaller
         throw new PlatformNotSupportedException("Only Windows and Linux are supported.");
     }
 
-    public async Task CheckAsync(Action<string> log, CancellationToken cancellationToken = default)
+    public async Task RunInteractiveWindowsInstallerAsync(
+        string? windowsInstallDirectory,
+        Action<string> log,
+        CancellationToken cancellationToken = default)
     {
-        var psqlPath = await FindPsqlAsync(cancellationToken);
+        if (!OperatingSystem.IsWindows())
+        {
+            throw new PlatformNotSupportedException("Interactive PostgreSQL installer mode is available only on Windows.");
+        }
+
+        log($"OS: {RuntimeInformation.OSDescription}");
+        log($"Target PostgreSQL version: {RequiredVersion}");
+
+        var installDir = NormalizeWindowsInstallDirectory(windowsInstallDirectory);
+        var port = SelectFreeTcpPort(log);
+        var dataDir = Path.Combine(installDir, "data");
+        var installer = FindWindowsInstaller();
+        if (installer is null)
+        {
+            throw new FileNotFoundException(
+                "PostgreSQL 16.14 installer was not found. Put postgresql-16.14-*-windows-x64.exe into the Installers folder next to the application.");
+        }
+
+        await LogWindowsPostgresInstancesAsync(log, cancellationToken);
+
+        log($"Installer: {installer}");
+        log("Starting PostgreSQL GUI installer. Administrator privileges are required.");
+        log("Use these values in the PostgreSQL wizard:");
+        log($"- Installation directory: {installDir}");
+        log($"- Data directory: {dataDir}");
+        log($"- Port: {port}");
+        log($"- Superuser password: {SuperPassword}");
+        log("- Components: PostgreSQL Server and Command Line Tools are required.");
+        log("- Stack Builder: clear this checkbox; it is not required for OilCtrl.");
+        log("- pgAdmin 4: optional.");
+
+        await RunProcessAsync(
+            installer,
+            Array.Empty<string>(),
+            log,
+            cancellationToken,
+            runAsAdmin: true);
+    }
+
+    public async Task CheckAsync(
+        string? windowsInstallDirectory,
+        Action<string> log,
+        CancellationToken cancellationToken = default)
+    {
+        var port = await ResolveWindowsPortAsync(windowsInstallDirectory, log, cancellationToken);
+        var psqlPath = await FindPsqlAsync(windowsInstallDirectory, cancellationToken);
         if (psqlPath is null)
         {
             log("psql was not found. PostgreSQL is not installed or its bin directory is not in PATH.");
@@ -50,80 +109,118 @@ public sealed class NativePostgresInstaller
         }
 
         log($"psql: {psqlPath}");
+        log($"Port: {port}");
         await RunProcessAsync(
             psqlPath,
-            new[] { "-h", "localhost", "-p", ServerPort.ToString(), "-U", SuperUser, "-d", DatabaseName, "-c", "select version();" },
+            new[] { "-h", "localhost", "-p", port.ToString(), "-U", SuperUser, "-d", DatabaseName, "-c", "select version();" },
             log,
             cancellationToken,
             new Dictionary<string, string> { ["PGPASSWORD"] = SuperPassword });
     }
 
-    private async Task InstallOnWindowsAsync(Action<string> log, CancellationToken cancellationToken)
+    private async Task InstallOnWindowsAsync(
+        string? windowsInstallDirectory,
+        Action<string> log,
+        CancellationToken cancellationToken)
     {
-        var psqlPath = await FindPsqlAsync(cancellationToken);
+        var installDir = NormalizeWindowsInstallDirectory(windowsInstallDirectory);
+        var psqlPath = await FindPsqlAsync(installDir, cancellationToken);
 
         if (psqlPath is null)
         {
-            var installer = FindWindowsInstaller();
-            if (installer is null)
+            await LogWindowsPostgresInstancesAsync(log, cancellationToken);
+            var port = await SelectFreeWindowsPostgresPortAsync(log, cancellationToken);
+            var dataDir = Path.Combine(installDir, "data");
+            var binariesArchive = FindWindowsBinariesArchive();
+            if (binariesArchive is null)
             {
                 throw new FileNotFoundException(
-                    "PostgreSQL 16.2 installer was not found. Put postgresql-16.2-*-windows-x64.exe into the Installers folder next to the application.");
+                    "PostgreSQL 16.14 binaries archive was not found. Put postgresql-16.14-*-windows-x64-binaries.zip into the Installers folder next to the application.");
             }
 
-            log($"Installer: {installer}");
-            log("Starting unattended PostgreSQL installation. Administrator privileges are required.");
+            log($"Binaries archive: {binariesArchive}");
+            log("Starting silent PostgreSQL binaries installation.");
+            var serviceName = $"postgresql-x64-16-oilctrl-{port}";
 
-            var installDir = GetWindowsInstallDir();
+            if (Directory.Exists(installDir) && Directory.EnumerateFileSystemEntries(installDir).Any())
+            {
+                throw new InvalidOperationException(
+                    $"Installation directory is not empty: {installDir}. Remove this directory or choose another OilCtrl PostgreSQL install directory before retrying.");
+            }
 
-            await RunProcessAsync(
-                installer,
-                new[]
-                {
-                    "--mode", "unattended",
-                    "--unattendedmodeui", "minimal",
-                    "--superpassword", SuperPassword,
-                    "--serverport", ServerPort.ToString(),
-                    "--servicename", "postgresql-x64-16-oilctrl",
-                    "--prefix", installDir
-                },
-                log,
-                cancellationToken,
-                runAsAdmin: true);
+            log($"Install directory: {installDir}");
+            log($"Data directory: {dataDir}");
+            log($"Selected PostgreSQL port: {port}");
+            log($"Windows service: {serviceName}");
+            log("Components: PostgreSQL Server and Command Line Tools only. Stack Builder and pgAdmin are skipped.");
+
+            ExtractWindowsBinaries(binariesArchive, installDir, log);
+
+            var binDir = Path.Combine(installDir, "bin");
+            psqlPath = Path.Combine(binDir, "psql.exe");
+            var initDbPath = Path.Combine(binDir, "initdb.exe");
+            var pgCtlPath = Path.Combine(binDir, "pg_ctl.exe");
+
+            if (!File.Exists(psqlPath) || !File.Exists(initDbPath) || !File.Exists(pgCtlPath))
+            {
+                throw new FileNotFoundException("PostgreSQL binaries were extracted, but required executables were not found in the bin directory.");
+            }
+
+            await InitializeWindowsDataDirectoryAsync(initDbPath, dataDir, log, cancellationToken);
+            ConfigureWindowsPostgresDataDirectory(dataDir, port, log);
+            await RegisterAndStartWindowsServiceAsync(pgCtlPath, serviceName, installDir, dataDir, log, cancellationToken);
         }
         else
         {
             log($"PostgreSQL client already exists: {psqlPath}");
+            var existingPort = TryReadPostgresPort(installDir);
+            if (existingPort is not null)
+            {
+                ConfigureWindowsPostgresDataDirectory(Path.Combine(installDir, "data"), existingPort.Value, log);
+            }
+
+            var existingInstallation = await FindWindowsPostgresInstallationForDirectoryAsync(installDir, cancellationToken);
+            if (existingInstallation is not null)
+            {
+                await EnsureWindowsServiceRunningAsync(existingInstallation.ServiceName, log, cancellationToken);
+            }
+            else
+            {
+                log("Matching PostgreSQL Windows service was not found for this installation directory.");
+            }
         }
 
-        psqlPath = await FindPsqlAsync(cancellationToken)
+        psqlPath = await FindPsqlAsync(installDir, cancellationToken)
             ?? throw new InvalidOperationException("psql was not found after installation.");
 
-        await InitializeDatabaseAsync(psqlPath, log, cancellationToken);
+        var installedPort = await ResolveWindowsPortAsync(installDir, log, cancellationToken);
+        await InitializeDatabaseAsync(psqlPath, installedPort, log, cancellationToken);
     }
 
     private async Task InstallOnLinuxAsync(Action<string> log, CancellationToken cancellationToken)
     {
-        var psqlPath = await FindPsqlAsync(cancellationToken);
+        var psqlPath = await FindPsqlAsync(null, cancellationToken);
         if (psqlPath is null)
         {
             log("psql was not found.");
-            log("Linux native installation depends on the target distribution. For production, place approved offline PostgreSQL 16.2 packages into Installers/linux and finalize an Astra/Debian/RHEL-specific installation flow.");
+            log("Linux native installation depends on the target distribution. For production, place approved offline PostgreSQL 16.14 packages into Installers/linux and finalize an Astra/Debian/RHEL-specific installation flow.");
             log("After PostgreSQL is installed, run initialization from this launcher again.");
             return;
         }
 
         log($"PostgreSQL client found: {psqlPath}");
-        await InitializeDatabaseAsync(psqlPath, log, cancellationToken);
+        await InitializeDatabaseAsync(psqlPath, PreferredServerPort, log, cancellationToken);
     }
 
-    private async Task InitializeDatabaseAsync(string psqlPath, Action<string> log, CancellationToken cancellationToken)
+    private async Task InitializeDatabaseAsync(string psqlPath, int port, Action<string> log, CancellationToken cancellationToken)
     {
         EnsureInitSqlExists();
 
+        log($"Using PostgreSQL port: {port}");
         log($"Checking database {DatabaseName}.");
         var databaseExists = await QueryScalarAsync(
             psqlPath,
+            port,
             "postgres",
             $"select 1 from pg_database where datname = '{DatabaseName}';",
             cancellationToken);
@@ -133,7 +230,7 @@ public sealed class NativePostgresInstaller
             log($"Creating database {DatabaseName}.");
             await RunProcessAsync(
                 psqlPath,
-                new[] { "-h", "localhost", "-p", ServerPort.ToString(), "-U", SuperUser, "-d", "postgres", "-c", $"CREATE DATABASE \"{DatabaseName}\";" },
+                new[] { "-h", "localhost", "-p", port.ToString(), "-U", SuperUser, "-d", "postgres", "-c", $"CREATE DATABASE \"{DatabaseName}\";" },
                 log,
                 cancellationToken,
                 new Dictionary<string, string> { ["PGPASSWORD"] = SuperPassword });
@@ -146,7 +243,7 @@ public sealed class NativePostgresInstaller
         log("Applying oilctrl-init.sql.");
         await RunProcessAsync(
             psqlPath,
-            new[] { "-h", "localhost", "-p", ServerPort.ToString(), "-U", SuperUser, "-d", DatabaseName, "-f", initSqlPath },
+            new[] { "-h", "localhost", "-p", port.ToString(), "-U", SuperUser, "-d", DatabaseName, "-f", initSqlPath },
             log,
             cancellationToken,
             new Dictionary<string, string> { ["PGPASSWORD"] = SuperPassword });
@@ -161,18 +258,205 @@ public sealed class NativePostgresInstaller
         }
 
         return Directory
-            .EnumerateFiles(installersDir, "postgresql-16.2-*-windows-x64.exe", SearchOption.TopDirectoryOnly)
+            .EnumerateFiles(installersDir, "postgresql-16.14-*-windows-x64.exe", SearchOption.TopDirectoryOnly)
             .OrderBy(path => path, StringComparer.OrdinalIgnoreCase)
             .FirstOrDefault();
     }
 
-    private async Task<string?> FindPsqlAsync(CancellationToken cancellationToken)
+    private static string? FindWindowsBinariesArchive()
+    {
+        var installersDir = Path.Combine(AppContext.BaseDirectory, "Installers");
+        if (!Directory.Exists(installersDir))
+        {
+            return null;
+        }
+
+        return Directory
+            .EnumerateFiles(installersDir, "postgresql-16.14-*-windows-x64-binaries.zip", SearchOption.TopDirectoryOnly)
+            .OrderByDescending(File.GetLastWriteTimeUtc)
+            .FirstOrDefault();
+    }
+
+    private static void ExtractWindowsBinaries(string archivePath, string installDir, Action<string> log)
+    {
+        Directory.CreateDirectory(installDir);
+        log("Extracting PostgreSQL binaries...");
+
+        using var archive = ZipFile.OpenRead(archivePath);
+        var extracted = 0;
+        foreach (var entry in archive.Entries)
+        {
+            if (!entry.FullName.StartsWith("pgsql/", StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            var relativePath = entry.FullName["pgsql/".Length..].Replace('/', Path.DirectorySeparatorChar);
+            if (string.IsNullOrWhiteSpace(relativePath) || ShouldSkipWindowsBinaryEntry(relativePath))
+            {
+                continue;
+            }
+
+            var destinationPath = Path.GetFullPath(Path.Combine(installDir, relativePath));
+            var installRoot = Path.GetFullPath(installDir);
+            if (!destinationPath.StartsWith(installRoot, StringComparison.OrdinalIgnoreCase))
+            {
+                throw new InvalidOperationException($"Unsafe archive entry path: {entry.FullName}");
+            }
+
+            if (entry.FullName.EndsWith("/", StringComparison.Ordinal))
+            {
+                Directory.CreateDirectory(destinationPath);
+                continue;
+            }
+
+            var destinationDirectory = Path.GetDirectoryName(destinationPath);
+            if (!string.IsNullOrWhiteSpace(destinationDirectory))
+            {
+                Directory.CreateDirectory(destinationDirectory);
+            }
+
+            entry.ExtractToFile(destinationPath, overwrite: true);
+            extracted++;
+
+            if (extracted % 100 == 0)
+            {
+                log($"Extracted {extracted} files...");
+            }
+        }
+
+        log($"Extraction completed. Extracted {extracted} files.");
+    }
+
+    private static bool ShouldSkipWindowsBinaryEntry(string relativePath)
+    {
+        var normalized = relativePath.Replace('\\', '/');
+        return normalized.StartsWith("pgAdmin 4/", StringComparison.OrdinalIgnoreCase) ||
+               normalized.StartsWith("StackBuilder/", StringComparison.OrdinalIgnoreCase) ||
+               normalized.Equals("bin/stackbuilder.exe", StringComparison.OrdinalIgnoreCase) ||
+               normalized.Contains("StackBuilder", StringComparison.OrdinalIgnoreCase) ||
+               normalized.Contains("pgAdmin", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static async Task InitializeWindowsDataDirectoryAsync(
+        string initDbPath,
+        string dataDir,
+        Action<string> log,
+        CancellationToken cancellationToken)
+    {
+        if (Directory.Exists(dataDir) && Directory.EnumerateFileSystemEntries(dataDir).Any())
+        {
+            log($"Data directory already exists and is not empty: {dataDir}");
+            return;
+        }
+
+        Directory.CreateDirectory(dataDir);
+        var passwordFile = Path.Combine(Path.GetTempPath(), $"oilctrl-postgres-password-{Guid.NewGuid():N}.txt");
+        await File.WriteAllTextAsync(passwordFile, SuperPassword, Utf8NoBom, cancellationToken);
+
+        try
+        {
+            log("Initializing PostgreSQL data directory with initdb...");
+            await RunProcessAsync(
+                initDbPath,
+                new[] { "-D", dataDir, "-U", SuperUser, "--pwfile", passwordFile, "-A", "scram-sha-256", "-E", "UTF8" },
+                log,
+                cancellationToken);
+        }
+        finally
+        {
+            TryDeleteFile(passwordFile);
+        }
+    }
+
+    private static void ConfigureWindowsPostgresDataDirectory(string dataDir, int port, Action<string> log)
+    {
+        var configPath = Path.Combine(dataDir, "postgresql.conf");
+        if (!File.Exists(configPath))
+        {
+            throw new FileNotFoundException($"postgresql.conf was not found: {configPath}");
+        }
+
+        log("Configuring PostgreSQL port and listen address...");
+        var config = File.ReadAllText(configPath, Encoding.UTF8);
+        config = Regex.Replace(config, @"(?m)^\s*#?\s*port\s*=.*$", $"port = {port}");
+        config = Regex.Replace(config, @"(?m)^\s*#?\s*listen_addresses\s*=.*$", "listen_addresses = 'localhost'");
+        File.WriteAllText(configPath, config, Utf8NoBom);
+    }
+
+    private static async Task RegisterAndStartWindowsServiceAsync(
+        string pgCtlPath,
+        string serviceName,
+        string installDir,
+        string dataDir,
+        Action<string> log,
+        CancellationToken cancellationToken)
+    {
+        log("Registering and starting PostgreSQL Windows service. Administrator privileges are required.");
+        var elevatedLogPath = Path.Combine(AppContext.BaseDirectory, "logs", "postgresql-service-install.log");
+        Directory.CreateDirectory(Path.GetDirectoryName(elevatedLogPath)!);
+
+        var scriptPath = Path.Combine(Path.GetTempPath(), $"oilctrl-postgres-service-{Guid.NewGuid():N}.ps1");
+        var script = $$"""
+            $ErrorActionPreference = 'Stop'
+            $log = '{{EscapePowerShellSingleQuotedString(elevatedLogPath)}}'
+            "Registering service {{serviceName}}" | Out-File -FilePath $log -Encoding utf8
+            "Granting NetworkService permissions" | Out-File -FilePath $log -Encoding utf8 -Append
+            $icaclsOutput = & icacls '{{EscapePowerShellSingleQuotedString(installDir)}}' /grant 'NT AUTHORITY\NetworkService:(OI)(CI)F' /T /Q 2>&1
+            $icaclsExitCode = $LASTEXITCODE
+            $icaclsOutput | Out-File -FilePath $log -Encoding utf8 -Append
+            if ($icaclsExitCode -ne 0) { throw "icacls failed with exit code $icaclsExitCode" }
+            $registerOutput = & '{{EscapePowerShellSingleQuotedString(pgCtlPath)}}' register -N '{{EscapePowerShellSingleQuotedString(serviceName)}}' -D '{{EscapePowerShellSingleQuotedString(dataDir)}}' -S auto -U 'NT AUTHORITY\NetworkService' 2>&1
+            $registerExitCode = $LASTEXITCODE
+            $registerOutput | Out-File -FilePath $log -Encoding utf8 -Append
+            if ($registerExitCode -ne 0) { throw "pg_ctl register failed with exit code $registerExitCode" }
+            "Starting service {{serviceName}}" | Out-File -FilePath $log -Encoding utf8 -Append
+            Start-Service -Name '{{EscapePowerShellSingleQuotedString(serviceName)}}'
+            $service = Get-Service -Name '{{EscapePowerShellSingleQuotedString(serviceName)}}'
+            $service.WaitForStatus('Running', '00:00:30')
+            "Service status: $($service.Status)" | Out-File -FilePath $log -Encoding utf8 -Append
+            "Service {{serviceName}} started" | Out-File -FilePath $log -Encoding utf8 -Append
+            """;
+
+        await File.WriteAllTextAsync(scriptPath, script, Utf8NoBom, cancellationToken);
+
+        try
+        {
+            var result = await RunProcessAsync(
+                "powershell.exe",
+                new[] { "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", scriptPath },
+                log,
+                cancellationToken,
+                runAsAdmin: true,
+                throwOnError: false);
+
+            if (File.Exists(elevatedLogPath))
+            {
+                log($"Service installation log: {elevatedLogPath}");
+                foreach (var line in File.ReadLines(elevatedLogPath).TakeLast(80))
+                {
+                    log(line);
+                }
+            }
+
+            if (result.ExitCode != 0)
+            {
+                throw new InvalidOperationException($"PostgreSQL service registration failed with exit code {result.ExitCode}.");
+            }
+        }
+        finally
+        {
+            TryDeleteFile(scriptPath);
+        }
+    }
+
+    private async Task<string?> FindPsqlAsync(string? windowsInstallDirectory, CancellationToken cancellationToken)
     {
         var candidates = new List<string>();
 
         if (OperatingSystem.IsWindows())
         {
-            candidates.Add(Path.Combine(GetWindowsInstallDir(), "bin", "psql.exe"));
+            candidates.Add(Path.Combine(NormalizeWindowsInstallDirectory(windowsInstallDirectory), "bin", "psql.exe"));
             candidates.Add(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "PostgreSQL", "16", "bin", "psql.exe"));
             candidates.Add(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86), "PostgreSQL", "16", "bin", "psql.exe"));
             candidates.Add("psql.exe");
@@ -200,12 +484,160 @@ public sealed class NativePostgresInstaller
         return null;
     }
 
-    private static string GetWindowsInstallDir()
+    private static async Task LogWindowsPostgresInstancesAsync(Action<string> log, CancellationToken cancellationToken)
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        var installations = await FindWindowsPostgresInstallationsAsync(cancellationToken);
+        if (installations.Count == 0)
+        {
+            log("Existing PostgreSQL Windows services were not found.");
+        }
+        else
+        {
+            log("Existing PostgreSQL Windows services:");
+            foreach (var installation in installations)
+            {
+                var portText = installation.Port is null ? "unknown port" : $"port {installation.Port}";
+                log($"- {installation.ServiceName}: {installation.Version}, {portText}, {installation.InstallDirectory}");
+            }
+        }
+
+        var occupiedPorts = GetOccupiedTcpPorts()
+            .Where(port => port is >= 5432 and <= 5500)
+            .Order()
+            .ToArray();
+
+        log(occupiedPorts.Length == 0
+            ? "No occupied TCP ports in range 5432-5500."
+            : $"Occupied TCP ports in range 5432-5500: {string.Join(", ", occupiedPorts)}");
+    }
+
+    private static async Task<List<WindowsPostgresInstallation>> FindWindowsPostgresInstallationsAsync(CancellationToken cancellationToken)
+    {
+        var installations = new List<WindowsPostgresInstallation>();
+        if (!OperatingSystem.IsWindows())
+        {
+            return installations;
+        }
+
+        using var services = Registry.LocalMachine.OpenSubKey(@"SYSTEM\CurrentControlSet\Services");
+        if (services is null)
+        {
+            return installations;
+        }
+
+        foreach (var serviceName in services.GetSubKeyNames().Where(name => name.StartsWith("postgresql", StringComparison.OrdinalIgnoreCase)))
+        {
+            var result = await RunProcessAsync(
+                "sc.exe",
+                new[] { "qc", serviceName },
+                _ => { },
+                cancellationToken,
+                throwOnError: false);
+
+            if (result.ExitCode != 0)
+            {
+                continue;
+            }
+
+            var psqlPath = TryGetPsqlPathFromServiceConfig(result.Output);
+            if (psqlPath is null || !File.Exists(psqlPath))
+            {
+                continue;
+            }
+
+            var version = await GetPsqlVersionAsync(psqlPath, cancellationToken);
+            var installDirectory = Path.GetFullPath(Path.Combine(Path.GetDirectoryName(psqlPath)!, ".."));
+            installations.Add(new WindowsPostgresInstallation(
+                serviceName,
+                installDirectory,
+                psqlPath,
+                version,
+                TryReadPostgresPort(installDirectory)));
+        }
+
+        return installations;
+    }
+
+    private static async Task<WindowsPostgresInstallation?> FindWindowsPostgresInstallationForDirectoryAsync(
+        string installDirectory,
+        CancellationToken cancellationToken)
+    {
+        var normalizedInstallDirectory = installDirectory.TrimEnd('\\');
+        var installations = await FindWindowsPostgresInstallationsAsync(cancellationToken);
+        return installations.FirstOrDefault(item =>
+            string.Equals(item.InstallDirectory.TrimEnd('\\'), normalizedInstallDirectory, StringComparison.OrdinalIgnoreCase));
+    }
+
+    private static string? TryGetPsqlPathFromServiceConfig(string serviceConfig)
+    {
+        const string marker = "BINARY_PATH_NAME";
+        var line = serviceConfig
+            .Split(Environment.NewLine, StringSplitOptions.RemoveEmptyEntries)
+            .FirstOrDefault(item => item.Contains(marker, StringComparison.OrdinalIgnoreCase));
+
+        if (line is null)
+        {
+            return null;
+        }
+
+        var firstQuote = line.IndexOf('"');
+        if (firstQuote < 0)
+        {
+            return null;
+        }
+
+        var secondQuote = line.IndexOf('"', firstQuote + 1);
+        if (secondQuote <= firstQuote)
+        {
+            return null;
+        }
+
+        var pgCtlPath = line.Substring(firstQuote + 1, secondQuote - firstQuote - 1);
+        var binDirectory = Path.GetDirectoryName(pgCtlPath);
+        return string.IsNullOrWhiteSpace(binDirectory)
+            ? null
+            : Path.Combine(binDirectory, "psql.exe");
+    }
+
+    private static async Task<string> GetPsqlVersionAsync(string psqlPath, CancellationToken cancellationToken)
+    {
+        var result = await RunProcessAsync(
+            psqlPath,
+            new[] { "--version" },
+            _ => { },
+            cancellationToken,
+            throwOnError: false);
+
+        var versionText = result.Output.Trim();
+        var parts = versionText.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        return parts.LastOrDefault() ?? versionText;
+    }
+
+    public static string GetDefaultWindowsInstallDir()
     {
         return Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles),
             "PostgreSQL",
-            "16-oilctrl");
+            "16.14-oilctrl");
+    }
+
+    private static string NormalizeWindowsInstallDirectory(string? windowsInstallDirectory)
+    {
+        return string.IsNullOrWhiteSpace(windowsInstallDirectory)
+            ? GetDefaultWindowsInstallDir()
+            : Path.GetFullPath(Environment.ExpandEnvironmentVariables(windowsInstallDirectory));
+    }
+
+    private static string GetInstallerLogPath()
+    {
+        var logsDirectory = Path.Combine(AppContext.BaseDirectory, "logs");
+        Directory.CreateDirectory(logsDirectory);
+        return Path.Combine(logsDirectory, "postgresql-install.log");
     }
 
     private static async Task<bool> CommandExistsAsync(string command, CancellationToken cancellationToken)
@@ -215,11 +647,276 @@ public sealed class NativePostgresInstaller
         return result.ExitCode == 0;
     }
 
-    private async Task<string> QueryScalarAsync(string psqlPath, string database, string sql, CancellationToken cancellationToken)
+    private static async Task<bool> WindowsServiceExistsAsync(string serviceName, CancellationToken cancellationToken)
+    {
+        var result = await RunProcessAsync(
+            "sc.exe",
+            new[] { "query", serviceName },
+            _ => { },
+            cancellationToken,
+            throwOnError: false);
+
+        return result.ExitCode == 0;
+    }
+
+    private static async Task EnsureWindowsServiceRunningAsync(
+        string serviceName,
+        Action<string> log,
+        CancellationToken cancellationToken)
+    {
+        var state = await GetWindowsServiceStateAsync(serviceName, cancellationToken);
+        if (string.Equals(state, "RUNNING", StringComparison.OrdinalIgnoreCase))
+        {
+            log($"Windows service is already running: {serviceName}");
+            return;
+        }
+
+        log($"Windows service {serviceName} is not running. Current state: {state ?? "unknown"}.");
+        log("Starting PostgreSQL Windows service. Administrator privileges are required.");
+
+        var elevatedLogPath = Path.Combine(AppContext.BaseDirectory, "logs", "postgresql-service-start.log");
+        Directory.CreateDirectory(Path.GetDirectoryName(elevatedLogPath)!);
+
+        var scriptPath = Path.Combine(Path.GetTempPath(), $"oilctrl-postgres-start-{Guid.NewGuid():N}.ps1");
+        var script = $$"""
+            $ErrorActionPreference = 'Stop'
+            $log = '{{EscapePowerShellSingleQuotedString(elevatedLogPath)}}'
+            "Starting service {{serviceName}}" | Out-File -FilePath $log -Encoding utf8
+            Start-Service -Name '{{EscapePowerShellSingleQuotedString(serviceName)}}'
+            $service = Get-Service -Name '{{EscapePowerShellSingleQuotedString(serviceName)}}'
+            $service.WaitForStatus('Running', '00:00:30')
+            "Service status: $($service.Status)" | Out-File -FilePath $log -Encoding utf8 -Append
+            """;
+
+        await File.WriteAllTextAsync(scriptPath, script, Utf8NoBom, cancellationToken);
+
+        try
+        {
+            var result = await RunProcessAsync(
+                "powershell.exe",
+                new[] { "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", scriptPath },
+                log,
+                cancellationToken,
+                runAsAdmin: true,
+                throwOnError: false);
+
+            log($"Service start log: {elevatedLogPath}");
+
+            if (File.Exists(elevatedLogPath))
+            {
+                foreach (var line in File.ReadLines(elevatedLogPath).TakeLast(40))
+                {
+                    log(line);
+                }
+            }
+
+            if (result.ExitCode != 0)
+            {
+                throw new InvalidOperationException($"PostgreSQL service start failed with exit code {result.ExitCode}.");
+            }
+        }
+        finally
+        {
+            TryDeleteFile(scriptPath);
+        }
+    }
+
+    private static async Task<string?> GetWindowsServiceStateAsync(string serviceName, CancellationToken cancellationToken)
+    {
+        var result = await RunProcessAsync(
+            "sc.exe",
+            new[] { "query", serviceName },
+            _ => { },
+            cancellationToken,
+            throwOnError: false);
+
+        if (result.ExitCode != 0)
+        {
+            return null;
+        }
+
+        var stateLine = result.Output
+            .Split(Environment.NewLine, StringSplitOptions.RemoveEmptyEntries)
+            .FirstOrDefault(line => line.Contains("STATE", StringComparison.OrdinalIgnoreCase));
+
+        if (stateLine is null)
+        {
+            return null;
+        }
+
+        var parts = stateLine.Split(':', 2);
+        return parts.Length < 2
+            ? null
+            : parts[1].Split(' ', StringSplitOptions.RemoveEmptyEntries).LastOrDefault();
+    }
+
+    private static async Task<int> ResolveWindowsPortAsync(
+        string? windowsInstallDirectory,
+        Action<string> log,
+        CancellationToken cancellationToken)
+    {
+        var installDir = NormalizeWindowsInstallDirectory(windowsInstallDirectory);
+        var port = TryReadPostgresPort(installDir);
+        if (port is not null)
+        {
+            return port.Value;
+        }
+
+        var installations = await FindWindowsPostgresInstallationsAsync(cancellationToken);
+        var selectedInstallation = installations.FirstOrDefault(item =>
+            string.Equals(item.InstallDirectory.TrimEnd('\\'), installDir.TrimEnd('\\'), StringComparison.OrdinalIgnoreCase));
+
+        if (selectedInstallation?.Port is not null)
+        {
+            return selectedInstallation.Port.Value;
+        }
+
+        log($"PostgreSQL port was not found in installation metadata. Falling back to preferred port {PreferredServerPort}.");
+        return PreferredServerPort;
+    }
+
+    private static async Task<int> SelectFreeWindowsPostgresPortAsync(Action<string> log, CancellationToken cancellationToken)
+    {
+        var occupied = GetOccupiedTcpPorts();
+        foreach (var port in GetPreferredPostgresPorts())
+        {
+            var serviceName = $"postgresql-x64-16-oilctrl-{port}";
+
+            if (occupied.Contains(port))
+            {
+                continue;
+            }
+
+            if (await WindowsServiceExistsAsync(serviceName, cancellationToken))
+            {
+                log($"TCP port {port} is free, but Windows service already exists: {serviceName}. Trying next port.");
+                continue;
+            }
+
+            if (CanBindTcpPort(port))
+            {
+                log($"Selected free TCP port: {port}");
+                return port;
+            }
+        }
+
+        log("Could not find a free TCP port with a free OilCtrl Windows service name in preferred ranges 5433-5500 and 15432-15531.");
+        throw new InvalidOperationException("No free TCP port was found for PostgreSQL.");
+    }
+
+    private static int SelectFreeTcpPort(Action<string> log)
+    {
+        var occupied = GetOccupiedTcpPorts();
+        foreach (var port in GetPreferredPostgresPorts())
+        {
+            if (occupied.Contains(port))
+            {
+                continue;
+            }
+
+            if (CanBindTcpPort(port))
+            {
+                log($"Selected free TCP port: {port}");
+                return port;
+            }
+        }
+
+        log("Could not find a free TCP port in preferred ranges 5433-5500 and 15432-15531.");
+        throw new InvalidOperationException("No free TCP port was found for PostgreSQL.");
+    }
+
+    private static IEnumerable<int> GetPreferredPostgresPorts()
+    {
+        return Enumerable.Range(PreferredServerPort, 5500 - PreferredServerPort + 1)
+            .Concat(Enumerable.Range(15432, 100));
+    }
+
+    private static HashSet<int> GetOccupiedTcpPorts()
+    {
+        var properties = IPGlobalProperties.GetIPGlobalProperties();
+        return properties
+            .GetActiveTcpListeners()
+            .Select(endpoint => endpoint.Port)
+            .Concat(properties.GetActiveTcpConnections().Select(connection => connection.LocalEndPoint.Port))
+            .ToHashSet();
+    }
+
+    private static bool CanBindTcpPort(int port)
+    {
+        try
+        {
+            var listener = new TcpListener(IPAddress.Loopback, port);
+            listener.Start();
+            listener.Stop();
+            return true;
+        }
+        catch (SocketException)
+        {
+            return false;
+        }
+    }
+
+    private static int? TryReadPostgresPort(string installDirectory)
+    {
+        var summaryPath = Path.Combine(installDirectory, "installation_summary.log");
+        if (File.Exists(summaryPath))
+        {
+            var port = File.ReadLines(summaryPath)
+                .Select(TryParsePortLine)
+                .FirstOrDefault(value => value is not null);
+
+            if (port is not null)
+            {
+                return port;
+            }
+        }
+
+        var configPath = Path.Combine(installDirectory, "data", "postgresql.conf");
+        if (!File.Exists(configPath))
+        {
+            return null;
+        }
+
+        try
+        {
+            return File.ReadLines(configPath)
+                .Select(TryParsePortLine)
+                .FirstOrDefault(value => value is not null);
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return null;
+        }
+    }
+
+    private static int? TryParsePortLine(string line)
+    {
+        var trimmed = line.Trim();
+        if (trimmed.StartsWith("Database Port:", StringComparison.OrdinalIgnoreCase))
+        {
+            return int.TryParse(trimmed.Split(':', 2)[1].Trim(), out var summaryPort)
+                ? summaryPort
+                : null;
+        }
+
+        if (!trimmed.StartsWith("port", StringComparison.OrdinalIgnoreCase) || !trimmed.Contains('='))
+        {
+            return null;
+        }
+
+        var value = trimmed
+            .Split('=', 2)[1]
+            .Split('#', 2)[0]
+            .Trim();
+
+        return int.TryParse(value, out var configPort) ? configPort : null;
+    }
+
+    private async Task<string> QueryScalarAsync(string psqlPath, int port, string database, string sql, CancellationToken cancellationToken)
     {
         var result = await RunProcessAsync(
             psqlPath,
-            new[] { "-h", "localhost", "-p", ServerPort.ToString(), "-U", SuperUser, "-d", database, "-tAc", sql },
+            new[] { "-h", "localhost", "-p", port.ToString(), "-U", SuperUser, "-d", database, "-tAc", sql },
             _ => { },
             cancellationToken,
             new Dictionary<string, string> { ["PGPASSWORD"] = SuperPassword });
@@ -263,7 +960,7 @@ public sealed class NativePostgresInstaller
                 END
                 $$;
                 """,
-                Encoding.UTF8);
+                Utf8NoBom);
         }
     }
 
@@ -334,10 +1031,31 @@ public sealed class NativePostgresInstaller
         var result = new ProcessResult(process.ExitCode, output.ToString(), errors.ToString());
         if (throwOnError && result.ExitCode != 0)
         {
+            LogInstallerTrace(log);
             throw new InvalidOperationException($"Command failed with exit code {result.ExitCode}: {fileName}");
         }
 
         return result;
+    }
+
+    private static void LogInstallerTrace(Action<string> log)
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        var installerLogPath = GetInstallerLogPath();
+        if (!File.Exists(installerLogPath))
+        {
+            return;
+        }
+
+        log($"Last lines from {installerLogPath}:");
+        foreach (var line in File.ReadLines(installerLogPath).TakeLast(80))
+        {
+            log(line);
+        }
     }
 
     private static string MaskSensitiveArgument(string argument)
@@ -345,5 +1063,32 @@ public sealed class NativePostgresInstaller
         return argument == SuperPassword ? "********" : argument;
     }
 
+    private static string EscapePowerShellSingleQuotedString(string value)
+    {
+        return value.Replace("'", "''", StringComparison.Ordinal);
+    }
+
+    private static void TryDeleteFile(string path)
+    {
+        try
+        {
+            if (File.Exists(path))
+            {
+                File.Delete(path);
+            }
+        }
+        catch
+        {
+            // Best-effort cleanup of temporary installer helper files.
+        }
+    }
+
     private sealed record ProcessResult(int ExitCode, string Output, string Error);
+
+    private sealed record WindowsPostgresInstallation(
+        string ServiceName,
+        string InstallDirectory,
+        string PsqlPath,
+        string Version,
+        int? Port);
 }
