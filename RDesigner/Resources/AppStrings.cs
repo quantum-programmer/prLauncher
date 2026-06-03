@@ -41,7 +41,7 @@ public static class AppStrings
     public static string InstallerCheckOperation = "Проверка PostgreSQL";
     public static string InstallerCompletedStatus = "Операция выполнена";
     public static string InstallerErrorStatus = "Ошибка";
-    public static string InstallerPutInstallerLog = "Поместите установочный архив PostgreSQL 16.14 для Windows в папку Installers рядом с приложением.";
+    public static string InstallerPutInstallerLog = "Поместите архив PostgreSQL 16.14 для Windows или PGDG .deb-пакеты для Astra Linux 1.8 в папку Installers рядом с приложением.";
     public static string InstallerMainWindowNotFoundLog = "Главное окно не найдено. Диалог выбора папки не может быть открыт.";
     public static string InstallerSelectPostgresFolderTitle = "Выберите папку установки PostgreSQL";
     public static string InstallerDirectorySelectedLog = "Выбрана папка установки: {Directory}";
@@ -83,6 +83,16 @@ public static class AppStrings
     public static string InstallerLinuxPsqlNotFoundLog = "psql не найден.";
     public static string InstallerLinuxNativeInstallInfoLog = "Нативная установка Linux зависит от целевого дистрибутива. Для production поместите утвержденные offline-пакеты PostgreSQL 16.14 в Installers/linux и финализируйте сценарий установки для Astra/Debian/RHEL.";
     public static string InstallerLinuxRetryLog = "После установки PostgreSQL запустите инициализацию из этого лаунчера еще раз.";
+    public static string InstallerLinuxDistributionLog = "Linux distribution: {Id}, version {Version}";
+    public static string InstallerLinuxDistributionNotSupported = "Linux installer supports Astra Linux/Debian-compatible systems only.";
+    public static string InstallerLinuxDebPackagesNotFound = "PostgreSQL 16.14 .deb packages were not found. Put the PGDG Debian 12 packages, including libpq5, into an Installers subfolder.";
+    public static string InstallerLinuxDebPackagesLog = "Offline PostgreSQL .deb packages: {Directory}";
+    public static string InstallerLinuxClusterLog = "Linux PostgreSQL cluster: {Cluster}";
+    public static string InstallerLinuxClusterNameExistsOnPortLog = "TCP port {Port} is free, but Linux PostgreSQL cluster/service already exists: {Cluster}, {ServiceName}. Trying next port.";
+    public static string InstallerStartLinuxServiceLog = "Starting Linux PostgreSQL service: {ServiceName}";
+    public static string InstallerLinuxSettingPasswordLog = "Setting PostgreSQL superuser password for Linux cluster.";
+    public static string InstallerLinuxPrivilegeToolNotFound = "pkexec or sudo was not found. Linux installation requires privilege elevation.";
+    public static string InstallerLinuxPrivilegeRunnerFailedLog = "Privilege elevation helper {Tool} failed with exit code {ExitCode}. Trying next helper.";
     public static string InstallerClientFoundLog = "Клиент PostgreSQL найден: {Path}";
     public static string InstallerUsingPostgresPortLog = "Используется порт PostgreSQL: {Port}";
     public static string InstallerCheckingDatabaseLog = "Проверяется база {Database}.";

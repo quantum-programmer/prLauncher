@@ -5,6 +5,7 @@ using System.Threading.Tasks;
 using Avalonia;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Platform.Storage;
+using Avalonia.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using RDesigner.Resources;
@@ -15,6 +16,7 @@ namespace RDesigner.ViewModels;
 public partial class InstallerViewModel : ViewModelBase
 {
     private readonly NativePostgresInstaller installer;
+    private readonly object logLock = new();
     private readonly StringBuilder logBuilder = new();
     private Func<string> statusProvider = () => AppStrings.InstallerReadyStatus;
 
@@ -148,16 +150,25 @@ public partial class InstallerViewModel : ViewModelBase
 
     private void AppendLog(string message)
     {
-        if (string.IsNullOrEmpty(message))
+        if (!Dispatcher.UIThread.CheckAccess())
         {
-            logBuilder.AppendLine();
-        }
-        else
-        {
-            logBuilder.AppendLine($"[{DateTime.Now:HH:mm:ss}] {message}");
+            Dispatcher.UIThread.Post(() => AppendLog(message));
+            return;
         }
 
-        LogText = logBuilder.ToString();
+        lock (logLock)
+        {
+            if (string.IsNullOrEmpty(message))
+            {
+                logBuilder.AppendLine();
+            }
+            else
+            {
+                logBuilder.AppendLine($"[{DateTime.Now:HH:mm:ss}] {message}");
+            }
+
+            LogText = logBuilder.ToString();
+        }
     }
 
     private void SetStatus(Func<string> provider)

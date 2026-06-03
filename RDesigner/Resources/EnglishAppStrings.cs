@@ -41,7 +41,7 @@ public static class EnglishAppStrings
     public const string InstallerCheckOperation = "PostgreSQL check";
     public const string InstallerCompletedStatus = "Operation completed";
     public const string InstallerErrorStatus = "Error";
-    public const string InstallerPutInstallerLog = "Put the PostgreSQL 16.14 Windows archive into the Installers folder next to the application.";
+    public const string InstallerPutInstallerLog = "Put the PostgreSQL 16.14 Windows archive or Astra Linux 1.8 PGDG .deb packages into the Installers folder next to the application.";
     public const string InstallerMainWindowNotFoundLog = "Main window was not found. Folder dialog cannot be opened.";
     public const string InstallerSelectPostgresFolderTitle = "Select PostgreSQL installation folder";
     public const string InstallerDirectorySelectedLog = "Install directory selected: {Directory}";
@@ -83,6 +83,16 @@ public static class EnglishAppStrings
     public const string InstallerLinuxPsqlNotFoundLog = "psql was not found.";
     public const string InstallerLinuxNativeInstallInfoLog = "Linux native installation depends on the target distribution. For production, place approved offline PostgreSQL 16.14 packages into Installers/linux and finalize an Astra/Debian/RHEL-specific installation flow.";
     public const string InstallerLinuxRetryLog = "After PostgreSQL is installed, run initialization from this launcher again.";
+    public const string InstallerLinuxDistributionLog = "Linux distribution: {Id}, version {Version}";
+    public const string InstallerLinuxDistributionNotSupported = "Linux installer supports Astra Linux/Debian-compatible systems only.";
+    public const string InstallerLinuxDebPackagesNotFound = "PostgreSQL 16.14 .deb packages were not found. Put the PGDG Debian 12 packages, including libpq5, into an Installers subfolder.";
+    public const string InstallerLinuxDebPackagesLog = "Offline PostgreSQL .deb packages: {Directory}";
+    public const string InstallerLinuxClusterLog = "Linux PostgreSQL cluster: {Cluster}";
+    public const string InstallerLinuxClusterNameExistsOnPortLog = "TCP port {Port} is free, but Linux PostgreSQL cluster/service already exists: {Cluster}, {ServiceName}. Trying next port.";
+    public const string InstallerStartLinuxServiceLog = "Starting Linux PostgreSQL service: {ServiceName}";
+    public const string InstallerLinuxSettingPasswordLog = "Setting PostgreSQL superuser password for Linux cluster.";
+    public const string InstallerLinuxPrivilegeToolNotFound = "pkexec or sudo was not found. Linux installation requires privilege elevation.";
+    public const string InstallerLinuxPrivilegeRunnerFailedLog = "Privilege elevation helper {Tool} failed with exit code {ExitCode}. Trying next helper.";
     public const string InstallerClientFoundLog = "PostgreSQL client found: {Path}";
     public const string InstallerUsingPostgresPortLog = "Using PostgreSQL port: {Port}";
     public const string InstallerCheckingDatabaseLog = "Checking database {Database}.";

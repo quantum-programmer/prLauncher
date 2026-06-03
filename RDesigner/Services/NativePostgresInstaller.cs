@@ -26,6 +26,8 @@ public sealed class NativePostgresInstaller
     public const int PreferredServerPort = 5433;
 
     private static readonly Encoding Utf8NoBom = new UTF8Encoding(false);
+    private const string LinuxClusterNamePrefix = "oilctrl";
+    private const string LinuxPostgresVersion = "16";
 
     private readonly string initSqlPath = Path.Combine(AppContext.BaseDirectory, "Installers", "oilctrl-init.sql");
 
@@ -101,7 +103,7 @@ public sealed class NativePostgresInstaller
         Action<string> log,
         CancellationToken cancellationToken = default)
     {
-        var port = await ResolveWindowsPortAsync(windowsInstallDirectory, log, cancellationToken);
+        var port = await ResolvePostgresPortAsync(windowsInstallDirectory, log, cancellationToken);
         var psqlPath = await FindPsqlAsync(windowsInstallDirectory, cancellationToken);
         if (psqlPath is null)
         {
@@ -200,17 +202,31 @@ public sealed class NativePostgresInstaller
 
     private async Task InstallOnLinuxAsync(Action<string> log, CancellationToken cancellationToken)
     {
+        await EnsureAstraOrDebianLinuxAsync(log, cancellationToken);
+
         var psqlPath = await FindPsqlAsync(null, cancellationToken);
         if (psqlPath is null)
         {
             log(AppStrings.InstallerLinuxPsqlNotFoundLog);
-            log(AppStrings.InstallerLinuxNativeInstallInfoLog);
-            log(AppStrings.InstallerLinuxRetryLog);
-            return;
+            await InstallLinuxDebPackagesAsync(log, cancellationToken);
+            psqlPath = await FindPsqlAsync(null, cancellationToken);
+        }
+
+        if (psqlPath is null)
+        {
+            throw new InvalidOperationException(AppStrings.InstallerPsqlNotFoundLog);
         }
 
         log(Format(AppStrings.InstallerClientFoundLog, ("Path", psqlPath)));
-        await InitializeDatabaseAsync(psqlPath, PreferredServerPort, log, cancellationToken);
+
+        var port = await SelectFreeLinuxPostgresPortAsync(log, cancellationToken);
+        var clusterName = GetLinuxClusterName(port);
+        log(Format(AppStrings.InstallerSelectedPostgresPortLog, ("Port", port.ToString())));
+        log(Format(AppStrings.InstallerLinuxClusterLog, ("Cluster", $"{LinuxPostgresVersion}/{clusterName}")));
+        await CreateAndStartLinuxClusterAsync(clusterName, port, log, cancellationToken);
+
+        await EnsureLinuxPostgresPasswordAsync(port, log, cancellationToken);
+        await InitializeDatabaseAsync(psqlPath, port, log, cancellationToken);
     }
 
     private async Task InitializeDatabaseAsync(string psqlPath, int port, Action<string> log, CancellationToken cancellationToken)
@@ -933,6 +949,423 @@ public sealed class NativePostgresInstaller
         return result.Output;
     }
 
+    private static async Task EnsureAstraOrDebianLinuxAsync(Action<string> log, CancellationToken cancellationToken)
+    {
+        var osRelease = await ReadLinuxOsReleaseAsync(cancellationToken);
+        var id = GetOsReleaseValue(osRelease, "ID");
+        var idLike = GetOsReleaseValue(osRelease, "ID_LIKE");
+        var versionId = GetOsReleaseValue(osRelease, "VERSION_ID");
+
+        log(Format(
+            AppStrings.InstallerLinuxDistributionLog,
+            ("Id", id ?? "unknown"),
+            ("Version", versionId ?? "unknown")));
+
+        var isAstraOrDebian =
+            ContainsOsToken(id, "astra") ||
+            ContainsOsToken(id, "debian") ||
+            ContainsOsToken(idLike, "astra") ||
+            ContainsOsToken(idLike, "debian");
+
+        if (!isAstraOrDebian)
+        {
+            throw new PlatformNotSupportedException(AppStrings.InstallerLinuxDistributionNotSupported);
+        }
+    }
+
+    private static async Task<IReadOnlyDictionary<string, string>> ReadLinuxOsReleaseAsync(CancellationToken cancellationToken)
+    {
+        const string osReleasePath = "/etc/os-release";
+        if (!File.Exists(osReleasePath))
+        {
+            return new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        }
+
+        var result = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var line in await File.ReadAllLinesAsync(osReleasePath, cancellationToken))
+        {
+            var trimmed = line.Trim();
+            if (trimmed.Length == 0 || trimmed.StartsWith('#') || !trimmed.Contains('='))
+            {
+                continue;
+            }
+
+            var parts = trimmed.Split('=', 2);
+            result[parts[0]] = UnquoteOsReleaseValue(parts[1]);
+        }
+
+        return result;
+    }
+
+    private static string? GetOsReleaseValue(IReadOnlyDictionary<string, string> values, string key)
+    {
+        return values.TryGetValue(key, out var value) ? value : null;
+    }
+
+    private static string UnquoteOsReleaseValue(string value)
+    {
+        value = value.Trim();
+        if (value.Length >= 2 && value[0] == '"' && value[^1] == '"')
+        {
+            return value[1..^1].Replace("\\\"", "\"", StringComparison.Ordinal);
+        }
+
+        return value;
+    }
+
+    private static bool ContainsOsToken(string? value, string token)
+    {
+        return value?
+            .Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Any(item => string.Equals(item, token, StringComparison.OrdinalIgnoreCase)) == true;
+    }
+
+    private static async Task InstallLinuxDebPackagesAsync(Action<string> log, CancellationToken cancellationToken)
+    {
+        var packagesDirectory = FindLinuxDebPackagesDirectory();
+        if (packagesDirectory is null)
+        {
+            throw new FileNotFoundException(AppStrings.InstallerLinuxDebPackagesNotFound);
+        }
+
+        log(Format(AppStrings.InstallerLinuxDebPackagesLog, ("Directory", packagesDirectory)));
+        await RunLinuxPrivilegedScriptAsync(
+            $$"""
+            set -eu
+            export DEBIAN_FRONTEND=noninteractive
+            cd {{ShellQuote(packagesDirectory)}}
+            apt-get install -y --no-install-recommends ./*.deb
+            """,
+            log,
+            cancellationToken);
+    }
+
+    private static string? FindLinuxDebPackagesDirectory()
+    {
+        var installersDir = Path.Combine(AppContext.BaseDirectory, "Installers");
+        if (!Directory.Exists(installersDir))
+        {
+            return null;
+        }
+
+        return Directory
+            .EnumerateDirectories(installersDir, "*", SearchOption.TopDirectoryOnly)
+            .Prepend(installersDir)
+            .Where(HasRequiredLinuxDebPackages)
+            .OrderByDescending(Directory.GetLastWriteTimeUtc)
+            .FirstOrDefault();
+    }
+
+    private static bool HasRequiredLinuxDebPackages(string directory)
+    {
+        return Directory.EnumerateFiles(directory, "postgresql-client-common_*_all.deb").Any() &&
+               Directory.EnumerateFiles(directory, "postgresql-common_*_all.deb").Any() &&
+               Directory.EnumerateFiles(directory, "postgresql-client-16_*_amd64.deb").Any() &&
+               Directory.EnumerateFiles(directory, "postgresql-16_*_amd64.deb").Any() &&
+               Directory.EnumerateFiles(directory, "libpq5_*_amd64.deb").Any();
+    }
+
+    private static async Task<LinuxPostgresCluster?> FindExistingLinuxOilCtrlClusterAsync(CancellationToken cancellationToken)
+    {
+        var result = await RunProcessAsync(
+            "pg_lsclusters",
+            new[] { "--no-header" },
+            _ => { },
+            cancellationToken,
+            throwOnError: false);
+
+        if (result.ExitCode != 0)
+        {
+            return null;
+        }
+
+        return result.Output
+            .Split(Environment.NewLine, StringSplitOptions.RemoveEmptyEntries)
+            .Select(TryParseLinuxClusterLine)
+            .Where(cluster => cluster is not null)
+            .Cast<LinuxPostgresCluster>()
+            .Where(cluster =>
+                string.Equals(cluster.Version, LinuxPostgresVersion, StringComparison.Ordinal) &&
+                cluster.Name.StartsWith($"{LinuxClusterNamePrefix}-", StringComparison.OrdinalIgnoreCase))
+            .OrderBy(cluster => cluster.Port)
+            .FirstOrDefault();
+    }
+
+    private static LinuxPostgresCluster? TryParseLinuxClusterLine(string line)
+    {
+        var columns = line.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        if (columns.Length < 3 || !int.TryParse(columns[2], out var port))
+        {
+            return null;
+        }
+
+        return new LinuxPostgresCluster(columns[0], columns[1], port);
+    }
+
+    private static async Task<int> SelectFreeLinuxPostgresPortAsync(Action<string> log, CancellationToken cancellationToken)
+    {
+        var occupied = GetOccupiedTcpPorts();
+        foreach (var port in GetPreferredPostgresPorts())
+        {
+            var clusterName = GetLinuxClusterName(port);
+            var serviceName = GetLinuxServiceName(clusterName);
+
+            if (occupied.Contains(port))
+            {
+                continue;
+            }
+
+            if (await LinuxClusterOrServiceExistsAsync(clusterName, serviceName, cancellationToken))
+            {
+                log(Format(
+                    AppStrings.InstallerLinuxClusterNameExistsOnPortLog,
+                    ("Port", port.ToString()),
+                    ("Cluster", $"{LinuxPostgresVersion}/{clusterName}"),
+                    ("ServiceName", serviceName)));
+                continue;
+            }
+
+            if (CanBindTcpPort(port))
+            {
+                log(Format(AppStrings.InstallerSelectedFreeTcpPortLog, ("Port", port.ToString())));
+                return port;
+            }
+        }
+
+        log(AppStrings.InstallerNoFreeTcpWithServiceLog);
+        throw new InvalidOperationException(AppStrings.InstallerNoFreeTcp);
+    }
+
+    private static async Task<bool> LinuxClusterOrServiceExistsAsync(
+        string clusterName,
+        string serviceName,
+        CancellationToken cancellationToken)
+    {
+        var clustersResult = await RunProcessAsync(
+            "pg_lsclusters",
+            new[] { "--no-header" },
+            _ => { },
+            cancellationToken,
+            throwOnError: false);
+
+        if (clustersResult.ExitCode == 0 &&
+            clustersResult.Output
+                .Split(Environment.NewLine, StringSplitOptions.RemoveEmptyEntries)
+                .Select(TryParseLinuxClusterLine)
+                .Any(cluster =>
+                    cluster is not null &&
+                    string.Equals(cluster.Version, LinuxPostgresVersion, StringComparison.Ordinal) &&
+                    string.Equals(cluster.Name, clusterName, StringComparison.OrdinalIgnoreCase)))
+        {
+            return true;
+        }
+
+        if (Directory.Exists($"/etc/postgresql/{LinuxPostgresVersion}/{clusterName}"))
+        {
+            return true;
+        }
+
+        // postgresql@.service is a template unit, so "systemctl status postgresql@x"
+        // can look loaded even when the cluster does not exist.
+        var result = await RunProcessAsync(
+            "systemctl",
+            new[] { "is-enabled", serviceName },
+            _ => { },
+            cancellationToken,
+            throwOnError: false);
+
+        var state = result.Output.Trim();
+        return string.Equals(state, "enabled", StringComparison.OrdinalIgnoreCase) ||
+               string.Equals(state, "linked", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static async Task CreateAndStartLinuxClusterAsync(
+        string clusterName,
+        int port,
+        Action<string> log,
+        CancellationToken cancellationToken)
+    {
+        await RunLinuxPrivilegedScriptAsync(
+            $$"""
+            set -eu
+            if ! pg_lsclusters --no-header | awk '$1 == "{{LinuxPostgresVersion}}" && $2 == "{{clusterName}}" { found = 1 } END { exit found ? 0 : 1 }'; then
+              pg_createcluster {{LinuxPostgresVersion}} {{clusterName}} --port {{port}}
+            fi
+            sed -i -E "s/^[#[:space:]]*port[[:space:]]*=.*/port = {{port}}/" /etc/postgresql/{{LinuxPostgresVersion}}/{{clusterName}}/postgresql.conf
+            sed -i -E "s/^[#[:space:]]*listen_addresses[[:space:]]*=.*/listen_addresses = 'localhost'/" /etc/postgresql/{{LinuxPostgresVersion}}/{{clusterName}}/postgresql.conf
+            {{CreateLinuxSystemdServiceScript(LinuxPostgresVersion, clusterName)}}
+            systemctl restart {{ShellQuote(GetLinuxServiceName(clusterName))}}
+            systemctl enable {{ShellQuote(GetLinuxServiceName(clusterName))}}
+            """,
+            log,
+            cancellationToken);
+    }
+
+    private static async Task EnsureLinuxClusterRunningAsync(
+        LinuxPostgresCluster cluster,
+        Action<string> log,
+        CancellationToken cancellationToken)
+    {
+        log(Format(AppStrings.InstallerStartLinuxServiceLog, ("ServiceName", GetLinuxServiceName(cluster.Name))));
+        await RunLinuxPrivilegedScriptAsync(
+            $$"""
+            set -eu
+            {{CreateLinuxSystemdServiceScript(cluster.Version, cluster.Name)}}
+            systemctl restart {{ShellQuote(GetLinuxServiceName(cluster.Name))}}
+            systemctl enable {{ShellQuote(GetLinuxServiceName(cluster.Name))}}
+            """,
+            log,
+            cancellationToken);
+    }
+
+    private static async Task EnsureLinuxPostgresPasswordAsync(int port, Action<string> log, CancellationToken cancellationToken)
+    {
+        log(AppStrings.InstallerLinuxSettingPasswordLog);
+        await RunLinuxPrivilegedScriptAsync(
+            $$"""
+            set -eu
+            su - postgres -c {{ShellQuote($"psql -p {port} -d postgres -v ON_ERROR_STOP=1 -c \"ALTER USER postgres WITH PASSWORD '{EscapeSqlLiteral(SuperPassword)}';\"")}}
+            """,
+            log,
+            cancellationToken);
+    }
+
+    private static async Task RunLinuxPrivilegedScriptAsync(string script, Action<string> log, CancellationToken cancellationToken)
+    {
+        var scriptPath = Path.Combine(Path.GetTempPath(), $"oilctrl-postgres-linux-{Guid.NewGuid():N}.sh");
+        await File.WriteAllTextAsync(scriptPath, script.ReplaceLineEndings("\n"), Utf8NoBom, cancellationToken);
+
+        try
+        {
+            var privilegedRunners = await FindLinuxPrivilegedRunnersAsync(scriptPath, cancellationToken);
+            if (privilegedRunners.Count == 0)
+            {
+                throw new InvalidOperationException(AppStrings.InstallerLinuxPrivilegeToolNotFound);
+            }
+
+            ProcessResult? lastResult = null;
+            foreach (var privilegedRunner in privilegedRunners)
+            {
+                var result = await RunProcessAsync(
+                    privilegedRunner.FileName,
+                    privilegedRunner.Arguments,
+                    log,
+                    cancellationToken,
+                    throwOnError: false);
+
+                if (result.ExitCode == 0)
+                {
+                    return;
+                }
+
+                lastResult = result;
+                log(Format(
+                    AppStrings.InstallerLinuxPrivilegeRunnerFailedLog,
+                    ("Tool", privilegedRunner.FileName),
+                    ("ExitCode", result.ExitCode.ToString())));
+            }
+
+            throw new InvalidOperationException(Format(
+                AppStrings.InstallerCommandFailed,
+                ("ExitCode", (lastResult?.ExitCode ?? -1).ToString()),
+                ("FileName", privilegedRunners[^1].FileName)));
+        }
+        finally
+        {
+            TryDeleteFile(scriptPath);
+        }
+    }
+
+    private static async Task<List<LinuxPrivilegedRunner>> FindLinuxPrivilegedRunnersAsync(
+        string scriptPath,
+        CancellationToken cancellationToken)
+    {
+        var runners = new List<LinuxPrivilegedRunner>();
+        var scriptCommand = $"sh {ShellQuote(scriptPath)}";
+
+        if (await CommandExistsAsync("fly-su", cancellationToken))
+        {
+            runners.Add(new LinuxPrivilegedRunner("fly-su", new[] { "-d", "-c", scriptCommand }));
+        }
+
+        if (await CommandExistsAsync("pkexec", cancellationToken))
+        {
+            runners.Add(new LinuxPrivilegedRunner("pkexec", new[] { "sh", scriptPath }));
+        }
+
+        if (await CommandExistsAsync("sudo", cancellationToken))
+        {
+            runners.Add(new LinuxPrivilegedRunner("sudo", new[] { "-E", "sh", scriptPath }));
+        }
+
+        return runners;
+    }
+
+    private static async Task<int> ResolvePostgresPortAsync(
+        string? windowsInstallDirectory,
+        Action<string> log,
+        CancellationToken cancellationToken)
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return await ResolveWindowsPortAsync(windowsInstallDirectory, log, cancellationToken);
+        }
+
+        if (OperatingSystem.IsLinux())
+        {
+            var cluster = await FindExistingLinuxOilCtrlClusterAsync(cancellationToken);
+            if (cluster is not null)
+            {
+                return cluster.Port;
+            }
+        }
+
+        log(Format(AppStrings.InstallerPortFallbackLog, ("Port", PreferredServerPort.ToString())));
+        return PreferredServerPort;
+    }
+
+    private static string GetLinuxClusterName(int port)
+    {
+        return $"{LinuxClusterNamePrefix}-{port}";
+    }
+
+    private static string GetLinuxServiceName(string clusterName)
+    {
+        return $"oilctrl-postgresql-{clusterName}.service";
+    }
+
+    private static string CreateLinuxSystemdServiceScript(string version, string clusterName)
+    {
+        var servicePath = ShellQuote($"/etc/systemd/system/{GetLinuxServiceName(clusterName)}");
+        var syslogIdentifier = $"oilctrl-postgresql-{version}-{clusterName}";
+        var pidFile = $"/run/postgresql/{version}-{clusterName}.pid";
+
+        return $$"""
+        cat > {{servicePath}} <<'OILCTRL_POSTGRESQL_SERVICE'
+        [Unit]
+        Description=OilCtrl PostgreSQL Cluster {{version}}/{{clusterName}}
+        AssertPathExists=/etc/postgresql/{{version}}/{{clusterName}}/postgresql.conf
+        RequiresMountsFor=/etc/postgresql/{{version}}/{{clusterName}} /var/lib/postgresql/{{version}}/{{clusterName}}
+        After=network.target
+
+        [Service]
+        Type=forking
+        ExecStart=/usr/bin/pg_ctlcluster --skip-systemctl-redirect {{version}} {{clusterName}} start
+        TimeoutStartSec=infinity
+        ExecStop=/usr/bin/pg_ctlcluster --skip-systemctl-redirect -m fast {{version}} {{clusterName}} stop
+        TimeoutStopSec=1h
+        ExecReload=/usr/bin/pg_ctlcluster --skip-systemctl-redirect {{version}} {{clusterName}} reload
+        PIDFile={{pidFile}}
+        SyslogIdentifier={{syslogIdentifier}}
+        OOMScoreAdjust=-900
+
+        [Install]
+        WantedBy=multi-user.target
+        OILCTRL_POSTGRESQL_SERVICE
+        systemctl daemon-reload
+        """;
+    }
+
     private void EnsureInitSqlExists()
     {
         var directory = Path.GetDirectoryName(initSqlPath);
@@ -1099,6 +1532,16 @@ public sealed class NativePostgresInstaller
         return value.Replace("'", "''", StringComparison.Ordinal);
     }
 
+    private static string EscapeSqlLiteral(string value)
+    {
+        return value.Replace("'", "''", StringComparison.Ordinal);
+    }
+
+    private static string ShellQuote(string value)
+    {
+        return "'" + value.Replace("'", "'\"'\"'", StringComparison.Ordinal) + "'";
+    }
+
     private static void TryDeleteFile(string path)
     {
         try
@@ -1122,4 +1565,8 @@ public sealed class NativePostgresInstaller
         string PsqlPath,
         string Version,
         int? Port);
+
+    private readonly record struct LinuxPrivilegedRunner(string FileName, IReadOnlyList<string> Arguments);
+
+    private sealed record LinuxPostgresCluster(string Version, string Name, int Port);
 }
