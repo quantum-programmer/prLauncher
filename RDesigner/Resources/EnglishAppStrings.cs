@@ -87,6 +87,7 @@ public static class EnglishAppStrings
     public const string InstallerLinuxDistributionNotSupported = "Linux installer supports Astra Linux/Debian-compatible systems only.";
     public const string InstallerLinuxDebPackagesNotFound = "PostgreSQL 16.14 .deb packages were not found. Put the PGDG Debian 12 packages, including libpq5, into an Installers subfolder.";
     public const string InstallerLinuxDebPackagesLog = "Offline PostgreSQL .deb packages: {Directory}";
+    public const string InstallerLinuxSetupScriptLog = "Running Linux setup script: {Path}";
     public const string InstallerLinuxClusterLog = "Linux PostgreSQL cluster: {Cluster}";
     public const string InstallerLinuxClusterNameExistsOnPortLog = "TCP port {Port} is free, but Linux PostgreSQL cluster/service already exists: {Cluster}, {ServiceName}. Trying next port.";
     public const string InstallerStartLinuxServiceLog = "Starting Linux PostgreSQL service: {ServiceName}";

@@ -203,6 +203,7 @@ public sealed class NativePostgresInstaller
     private async Task InstallOnLinuxAsync(Action<string> log, CancellationToken cancellationToken)
     {
         await EnsureAstraOrDebianLinuxAsync(log, cancellationToken);
+        await RunLinuxSetupScriptsAsync(log, cancellationToken);
 
         var psqlPath = await FindPsqlAsync(null, cancellationToken);
         if (psqlPath is null)
@@ -1048,21 +1049,65 @@ public sealed class NativePostgresInstaller
             return null;
         }
 
-        return Directory
-            .EnumerateDirectories(installersDir, "*", SearchOption.TopDirectoryOnly)
+        var packagesRoot = Path.Combine(installersDir, "packages");
+        var preferredDirectories = Directory.Exists(packagesRoot)
+            ? Directory.EnumerateDirectories(packagesRoot, "*", SearchOption.AllDirectories).Prepend(packagesRoot)
+            : Enumerable.Empty<string>();
+
+        var fallbackDirectories = Directory
+            .EnumerateDirectories(installersDir, "*", SearchOption.AllDirectories)
             .Prepend(installersDir)
+            .Where(path => !path.StartsWith(packagesRoot, StringComparison.OrdinalIgnoreCase));
+
+        return preferredDirectories
+            .Concat(fallbackDirectories)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
             .Where(HasRequiredLinuxDebPackages)
-            .OrderByDescending(Directory.GetLastWriteTimeUtc)
+            .OrderByDescending(path => path.StartsWith(packagesRoot, StringComparison.OrdinalIgnoreCase))
+            .ThenByDescending(Directory.GetLastWriteTimeUtc)
             .FirstOrDefault();
     }
 
     private static bool HasRequiredLinuxDebPackages(string directory)
     {
-        return Directory.EnumerateFiles(directory, "postgresql-client-common_*_all.deb").Any() &&
-               Directory.EnumerateFiles(directory, "postgresql-common_*_all.deb").Any() &&
-               Directory.EnumerateFiles(directory, "postgresql-client-16_*_amd64.deb").Any() &&
-               Directory.EnumerateFiles(directory, "postgresql-16_*_amd64.deb").Any() &&
-               Directory.EnumerateFiles(directory, "libpq5_*_amd64.deb").Any();
+        return HasNonEmptyDeb(directory, "postgresql-client-common_*_all.deb") &&
+               HasNonEmptyDeb(directory, "postgresql-common_*_all.deb") &&
+               HasNonEmptyDeb(directory, "postgresql-client-16_*_amd64.deb") &&
+               HasNonEmptyDeb(directory, "postgresql-16_*_amd64.deb") &&
+               HasNonEmptyDeb(directory, "libpq5_*_amd64.deb");
+    }
+
+    private static bool HasNonEmptyDeb(string directory, string pattern)
+    {
+        return Directory
+            .EnumerateFiles(directory, pattern)
+            .Any(path => new FileInfo(path).Length > 0);
+    }
+
+    private static async Task RunLinuxSetupScriptsAsync(Action<string> log, CancellationToken cancellationToken)
+    {
+        var scriptsDirectory = Path.Combine(AppContext.BaseDirectory, "Installers", "sh");
+        if (!Directory.Exists(scriptsDirectory))
+        {
+            return;
+        }
+
+        var scripts = Directory
+            .EnumerateFiles(scriptsDirectory, "*.sh", SearchOption.TopDirectoryOnly)
+            .OrderBy(path => path, StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+
+        foreach (var script in scripts)
+        {
+            log(Format(AppStrings.InstallerLinuxSetupScriptLog, ("Path", script)));
+            await RunLinuxPrivilegedScriptAsync(
+                $$"""
+                set -eu
+                sh {{ShellQuote(script)}}
+                """,
+                log,
+                cancellationToken);
+        }
     }
 
     private static async Task<LinuxPostgresCluster?> FindExistingLinuxOilCtrlClusterAsync(CancellationToken cancellationToken)
