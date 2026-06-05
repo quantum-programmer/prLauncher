@@ -15,7 +15,7 @@
         SystemDecorations="Full">
     <Border Padding="24">
         <StackPanel Spacing="14">
-            <TextBlock Text="RDesigner"
+            <TextBlock Text="{DynamicResource InstallerTitle}"
                        FontSize="22"
                        FontWeight="SemiBold" />
 

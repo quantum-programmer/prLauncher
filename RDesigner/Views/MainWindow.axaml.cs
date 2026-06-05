@@ -11,11 +11,10 @@ namespace RDesigner.Views
 {
     public partial class MainWindow : Window
     {        
-        public MainWindow()//(MainView mainView)
+        public MainWindow()
         {            
             InitializeComponent();
             AddHandler(KeyDownEvent, OnKeyDown, Avalonia.Interactivity.RoutingStrategies.Tunnel);
-            //Content = mainView;
         }
 
         private async void OnKeyDown(object? sender, KeyEventArgs e)

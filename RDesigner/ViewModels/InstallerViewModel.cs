@@ -10,6 +10,7 @@ using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using RDesigner.Resources;
 using RDesigner.Services;
+using Serilog;
 
 namespace RDesigner.ViewModels;
 
@@ -92,6 +93,7 @@ public partial class InstallerViewModel : ViewModelBase
         catch (Exception ex)
         {
             SetStatus(() => AppStrings.InstallerErrorStatus);
+            Log.Error(ex, AppStrings.InstallerFolderSelectionFailedLog.Replace("{Message}", ex.Message, StringComparison.Ordinal));
             AppendLog(AppStrings.InstallerFolderSelectionFailedLog.Replace("{Message}", ex.Message, StringComparison.Ordinal));
         }
     }
@@ -114,6 +116,7 @@ public partial class InstallerViewModel : ViewModelBase
         catch (Exception ex)
         {
             SetStatus(() => AppStrings.InstallerErrorStatus);
+            Log.Error(ex, AppStrings.InstallerCopyLogFailedLog.Replace("{Message}", ex.Message, StringComparison.Ordinal));
             AppendLog(AppStrings.InstallerCopyLogFailedLog.Replace("{Message}", ex.Message, StringComparison.Ordinal));
         }
     }
@@ -140,6 +143,7 @@ public partial class InstallerViewModel : ViewModelBase
         catch (Exception ex)
         {
             SetStatus(() => AppStrings.InstallerErrorStatus);
+            Log.Error(ex, "Installer operation failed.");
             AppendLog(ex.Message);
         }
         finally
@@ -165,6 +169,7 @@ public partial class InstallerViewModel : ViewModelBase
             else
             {
                 logBuilder.AppendLine($"[{DateTime.Now:HH:mm:ss}] {message}");
+                Log.Information("{InstallerMessage}", message);
             }
 
             LogText = logBuilder.ToString();
