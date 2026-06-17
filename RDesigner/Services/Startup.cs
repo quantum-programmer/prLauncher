@@ -1,8 +1,8 @@
-using Microsoft.Extensions.Configuration;
+﻿using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
-using RDesigner.Services;
-using RDesigner.ViewModels;
-using RDesigner.Views;
+using Pyramid.Services;
+using Pyramid.ViewModels;
+using Pyramid.Views;
 
 public class Startup
 {

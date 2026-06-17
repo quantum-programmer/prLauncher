@@ -1,9 +1,9 @@
-using Avalonia.Controls;
+﻿using Avalonia.Controls;
 using Microsoft.Extensions.DependencyInjection;
-using RDesigner.ViewModels;
+using Pyramid.ViewModels;
 using System;
 
-namespace RDesigner.Views;
+namespace Pyramid.Views;
 
 public partial class InstallerView : UserControl
 {

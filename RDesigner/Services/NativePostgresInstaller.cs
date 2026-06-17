@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
@@ -13,9 +13,9 @@ using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Win32;
-using RDesigner.Resources;
+using Pyramid.Resources;
 
-namespace RDesigner.Services;
+namespace Pyramid.Services;
 
 public sealed class NativePostgresInstaller
 {

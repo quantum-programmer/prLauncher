@@ -3,13 +3,13 @@ using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Data.Core;
 using Avalonia.Data.Core.Plugins;
 using Avalonia.Markup.Xaml;
-using RDesigner.Views;
+using Pyramid.Views;
 using System;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
-using RDesigner.Resources;
+using Pyramid.Resources;
 
-namespace RDesigner
+namespace Pyramid
 {
     public partial class App : Application
     {

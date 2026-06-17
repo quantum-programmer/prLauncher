@@ -5,9 +5,9 @@ using Serilog;
 using Serilog.Events;
 using System;
 using System.IO;
-using RDesigner.Resources;
+using Pyramid.Resources;
 
-namespace RDesigner
+namespace Pyramid
 {
     internal sealed class Program
     {
@@ -21,7 +21,7 @@ namespace RDesigner
                 .MinimumLevel.Debug()
                 .WriteTo.Console()
                 .WriteTo.File(
-                    path: Path.Combine(AppContext.BaseDirectory, "logs", "RDesigner.log"),
+                    path: Path.Combine(AppContext.BaseDirectory, "logs", "Pyramid.log"),
                     rollingInterval: RollingInterval.Day,
                     fileSizeLimitBytes: 10 * 1024 * 1024,
                     rollOnFileSizeLimit: true,

@@ -1,4 +1,4 @@
-<Project>
+﻿<Project>
   <PropertyGroup>
     <GitVersionWorkingDirectory>$(MSBuildProjectDirectory)\..</GitVersionWorkingDirectory>
     <GeneratedGitVersionFile>$(BaseIntermediateOutputPath)GitVersionInfo.g.cs</GeneratedGitVersionFile>
@@ -64,7 +64,7 @@
       <_GitVersionInfoLine Include="[assembly: System.Reflection.AssemblyVersionAttribute(&quot;$(AssemblyVersion)&quot;)]" />
       <_GitVersionInfoLine Include="[assembly: System.Reflection.AssemblyFileVersionAttribute(&quot;$(FileVersion)&quot;)]" />
       <_GitVersionInfoLine Include="[assembly: System.Reflection.AssemblyInformationalVersionAttribute(&quot;$(InformationalVersion)&quot;)]" />
-      <_GitVersionInfoLine Include="namespace RDesigner%3B" />
+      <_GitVersionInfoLine Include="namespace Pyramid%3B" />
       <_GitVersionInfoLine Include="public static class BuildInfo" />
       <_GitVersionInfoLine Include="{" />
       <_GitVersionInfoLine Include="    public const string Version = &quot;$(GitVersionTag)&quot;%3B" />

@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
@@ -8,11 +8,11 @@ using Avalonia.Platform.Storage;
 using Avalonia.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
-using RDesigner.Resources;
-using RDesigner.Services;
+using Pyramid.Resources;
+using Pyramid.Services;
 using Serilog;
 
-namespace RDesigner.ViewModels;
+namespace Pyramid.ViewModels;
 
 public partial class InstallerViewModel : ViewModelBase
 {

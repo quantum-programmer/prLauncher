@@ -1,4 +1,4 @@
-namespace RDesigner.Resources;
+﻿namespace Pyramid.Resources;
 
 public static class AppStrings
 {

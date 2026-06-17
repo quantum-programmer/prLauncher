@@ -1,0 +1,117 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <Nullable>enable</Nullable>
+    <BuiltInComInteropSupport>true</BuiltInComInteropSupport>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <AvaloniaUseCompiledBindingsByDefault>true</AvaloniaUseCompiledBindingsByDefault>
+    <TargetFramework>net8.0</TargetFramework>
+    <AssemblyName>Pyramid</AssemblyName>
+    <RootNamespace>Pyramid</RootNamespace>
+    <Configurations>Debug;Release;self-contained debug;self-contained release;self-contained debug single;self-contained release single</Configurations>
+    <GenerateAssemblyVersionAttribute>false</GenerateAssemblyVersionAttribute>
+    <GenerateAssemblyFileVersionAttribute>false</GenerateAssemblyFileVersionAttribute>
+    <GenerateAssemblyInformationalVersionAttribute>false</GenerateAssemblyInformationalVersionAttribute>
+  </PropertyGroup>
+
+  <Import Project="Build\GitVersion.targets" />
+
+  <ItemGroup>
+    <AvaloniaResource Include="Assets\avalonia-logo.ico" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Avalonia" Version="11.0.10" />
+    <PackageReference Include="Avalonia.Desktop" Version="11.0.10" />
+    <PackageReference Include="Avalonia.Themes.Fluent" Version="11.0.10" />
+    <PackageReference Include="Avalonia.Fonts.Inter" Version="11.0.10" />
+    <!--Condition below is needed to remove Avalonia.Diagnostics package from build output in Release configuration.-->
+    <PackageReference Condition="'$(Configuration)' == 'Debug'" Include="Avalonia.Diagnostics" Version="11.0.10" />
+    <PackageReference Include="CommunityToolkit.Mvvm" Version="8.2.1" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="9.0.0" />
+    <PackageReference Include="Microsoft.Extensions.Configuration.Json" Version="9.0.0" />
+    <PackageReference Include="Microsoft.Extensions.Hosting" Version="9.0.0" />
+    <PackageReference Include="Serilog" Version="4.2.0" />
+    <PackageReference Include="Serilog.Sinks.Console" Version="6.0.0" />
+    <PackageReference Include="Serilog.Sinks.File" Version="6.0.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="..\appsettings.json" Link="appsettings.json" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="Installers\**" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <PropertyGroup Condition="'$(Configuration)' == 'self-contained debug'">
+    <SelfContainedPublishConfiguration>Debug</SelfContainedPublishConfiguration>
+    <SelfContainedPublishFolderName>self-contained-debug</SelfContainedPublishFolderName>
+    <SelfContainedPublishMode>Split</SelfContainedPublishMode>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(Configuration)' == 'self-contained release'">
+    <SelfContainedPublishConfiguration>Release</SelfContainedPublishConfiguration>
+    <SelfContainedPublishFolderName>self-contained-release</SelfContainedPublishFolderName>
+    <SelfContainedPublishMode>Split</SelfContainedPublishMode>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(Configuration)' == 'self-contained debug single'">
+    <SelfContainedPublishConfiguration>Debug</SelfContainedPublishConfiguration>
+    <SelfContainedSingleFolderName>self-contained debug single</SelfContainedSingleFolderName>
+    <SelfContainedPublishMode>Single</SelfContainedPublishMode>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(Configuration)' == 'self-contained release single'">
+    <SelfContainedPublishConfiguration>Release</SelfContainedPublishConfiguration>
+    <SelfContainedSingleFolderName>self-contained release single</SelfContainedSingleFolderName>
+    <SelfContainedPublishMode>Single</SelfContainedPublishMode>
+  </PropertyGroup>
+
+  <Target Name="PublishSelfContainedProductBuilds"
+          AfterTargets="Build"
+          Condition="'$(SelfContainedPublishMode)' == 'Split' And '$(DesignTimeBuild)' != 'true'">
+    <PropertyGroup>
+      <PyramidPublishRoot>$(MSBuildProjectDirectory)\..\publish\$(SelfContainedPublishFolderName)</PyramidPublishRoot>
+      <OilCtrlCfgProject>$(MSBuildProjectDirectory)\..\..\OilCtrlCfg\OilCtrlCfg\OilCtrlCfg.csproj</OilCtrlCfgProject>
+      <OilCtrlCfgPublishRoot>$(MSBuildProjectDirectory)\..\..\OilCtrlCfg\publish\$(SelfContainedPublishFolderName)</OilCtrlCfgPublishRoot>
+      <SelfContainedPublishProperties>-p:PublishSingleFile=false -p:PublishTrimmed=false</SelfContainedPublishProperties>
+    </PropertyGroup>
+
+    <Message Importance="High" Text="Publishing Pyramid self-contained $(SelfContainedPublishConfiguration) win-x64..." />
+    <Exec Command="dotnet publish &quot;$(MSBuildProjectFullPath)&quot; -c $(SelfContainedPublishConfiguration) -r win-x64 --self-contained true $(SelfContainedPublishProperties) -o &quot;$(PyramidPublishRoot)\win-x64&quot;" />
+
+    <Message Importance="High" Text="Publishing Pyramid self-contained $(SelfContainedPublishConfiguration) linux-x64..." />
+    <Exec Command="dotnet publish &quot;$(MSBuildProjectFullPath)&quot; -c $(SelfContainedPublishConfiguration) -r linux-x64 --self-contained true $(SelfContainedPublishProperties) -o &quot;$(PyramidPublishRoot)\linux-x64&quot;" />
+
+    <Message Importance="High" Text="Publishing OilCtrlCfg self-contained $(SelfContainedPublishConfiguration) win-x64..." />
+    <Exec Command="dotnet publish &quot;$(OilCtrlCfgProject)&quot; -c $(SelfContainedPublishConfiguration) -r win-x64 --self-contained true $(SelfContainedPublishProperties) -o &quot;$(OilCtrlCfgPublishRoot)\win-x64&quot;" />
+
+    <Message Importance="High" Text="Publishing OilCtrlCfg self-contained $(SelfContainedPublishConfiguration) linux-x64..." />
+    <Exec Command="dotnet publish &quot;$(OilCtrlCfgProject)&quot; -c $(SelfContainedPublishConfiguration) -r linux-x64 --self-contained true $(SelfContainedPublishProperties) -o &quot;$(OilCtrlCfgPublishRoot)\linux-x64&quot;" />
+  </Target>
+
+  <Target Name="PublishSelfContainedSingleProductBuilds"
+          AfterTargets="Build"
+          Condition="'$(SelfContainedPublishMode)' == 'Single' And '$(DesignTimeBuild)' != 'true'">
+    <PropertyGroup>
+      <SelfContainedSingleRoot>$(MSBuildProjectDirectory)\..\publish\single</SelfContainedSingleRoot>
+      <OilCtrlCfgProject>$(MSBuildProjectDirectory)\..\..\OilCtrlCfg\OilCtrlCfg\OilCtrlCfg.csproj</OilCtrlCfgProject>
+      <SelfContainedPublishProperties>-p:PublishSingleFile=false -p:PublishTrimmed=false</SelfContainedPublishProperties>
+    </PropertyGroup>
+
+    <RemoveDir Directories="$(SelfContainedSingleRoot)\win-x64\$(SelfContainedSingleFolderName)" />
+    <RemoveDir Directories="$(SelfContainedSingleRoot)\linux-x64\$(SelfContainedSingleFolderName)" />
+    <MakeDir Directories="$(SelfContainedSingleRoot)\win-x64\$(SelfContainedSingleFolderName)" />
+    <MakeDir Directories="$(SelfContainedSingleRoot)\linux-x64\$(SelfContainedSingleFolderName)" />
+
+    <Message Importance="High" Text="Publishing single bundle: Pyramid self-contained $(SelfContainedPublishConfiguration) win-x64..." />
+    <Exec Command="dotnet publish &quot;$(MSBuildProjectFullPath)&quot; -c $(SelfContainedPublishConfiguration) -r win-x64 --self-contained true $(SelfContainedPublishProperties) -o &quot;$(SelfContainedSingleRoot)\win-x64\$(SelfContainedSingleFolderName)\Pyramid&quot;" />
+
+    <Message Importance="High" Text="Publishing single bundle: Pyramid self-contained $(SelfContainedPublishConfiguration) linux-x64..." />
+    <Exec Command="dotnet publish &quot;$(MSBuildProjectFullPath)&quot; -c $(SelfContainedPublishConfiguration) -r linux-x64 --self-contained true $(SelfContainedPublishProperties) -o &quot;$(SelfContainedSingleRoot)\linux-x64\$(SelfContainedSingleFolderName)\Pyramid&quot;" />
+
+    <Message Importance="High" Text="Publishing single bundle: OilCtrlCfg self-contained $(SelfContainedPublishConfiguration) win-x64..." />
+    <Exec Command="dotnet publish &quot;$(OilCtrlCfgProject)&quot; -c $(SelfContainedPublishConfiguration) -r win-x64 --self-contained true $(SelfContainedPublishProperties) -o &quot;$(SelfContainedSingleRoot)\win-x64\$(SelfContainedSingleFolderName)\OilCtrlCfg&quot;" />
+
+    <Message Importance="High" Text="Publishing single bundle: OilCtrlCfg self-contained $(SelfContainedPublishConfiguration) linux-x64..." />
+    <Exec Command="dotnet publish &quot;$(OilCtrlCfgProject)&quot; -c $(SelfContainedPublishConfiguration) -r linux-x64 --self-contained true $(SelfContainedPublishProperties) -o &quot;$(SelfContainedSingleRoot)\linux-x64\$(SelfContainedSingleFolderName)\OilCtrlCfg&quot;" />
+  </Target>
+</Project>
