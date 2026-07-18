@@ -6,6 +6,7 @@ using Serilog.Events;
 using System;
 using System.IO;
 using Pyramid.Resources;
+using Pyramid.Security;
 
 namespace Pyramid
 {
@@ -17,6 +18,12 @@ namespace Pyramid
         [STAThread]
         public static void Main(string[] args)
         {
+            if (TryRunMaintenanceCommand(args, out var exitCode))
+            {
+                Environment.ExitCode = exitCode;
+                return;
+            }
+
             Log.Logger = new LoggerConfiguration()
                 .MinimumLevel.Debug()
                 .WriteTo.Console()
@@ -56,12 +63,20 @@ namespace Pyramid
             Host.CreateDefaultBuilder(args)
                 .ConfigureAppConfiguration((context, configuration) =>
                 {
-                    configuration.SetBasePath(AppContext.BaseDirectory);
+                    var appBase = AppContext.BaseDirectory;
+                    var sharedSettings = Path.GetFullPath(Path.Combine(appBase, "..", "appsettings.json"));
+
+                    configuration.SetBasePath(appBase);
                     configuration.AddJsonFile("appsettings.json", optional: true, reloadOnChange: true);
                     configuration.AddJsonFile(
                         $"appsettings.{context.HostingEnvironment.EnvironmentName}.json",
                         optional: true,
                         reloadOnChange: true);
+
+                    if (File.Exists(sharedSettings))
+                    {
+                        configuration.AddJsonFile(sharedSettings, optional: true, reloadOnChange: true);
+                    }
                 })
                 .ConfigureServices((context, services) =>
                 {
@@ -73,5 +88,29 @@ namespace Pyramid
                 .UsePlatformDetect()
                 .WithInterFont()
                 .LogToTrace();
+
+        private static bool TryRunMaintenanceCommand(string[] args, out int exitCode)
+        {
+            exitCode = 0;
+            if (args.Length != 3 ||
+                !string.Equals(args[0], "--pyramid-save-database-credential", StringComparison.Ordinal))
+            {
+                return false;
+            }
+
+            try
+            {
+                var credentialId = args[1];
+                var passwordFile = args[2];
+                var password = File.ReadAllText(passwordFile);
+                DatabaseCredentialProvider.Create().SavePassword(credentialId, password);
+                return true;
+            }
+            catch
+            {
+                exitCode = 1;
+                return true;
+            }
+        }
     }
 }

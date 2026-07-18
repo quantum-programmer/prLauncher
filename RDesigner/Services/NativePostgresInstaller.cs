@@ -9,11 +9,14 @@ using System.Net.NetworkInformation;
 using System.Net.Sockets;
 using System.Runtime.InteropServices;
 using System.Text;
+using System.Text.Json;
+using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Win32;
 using Pyramid.Resources;
+using Pyramid.Security;
 
 namespace Pyramid.Services;
 
@@ -24,8 +27,13 @@ public sealed class NativePostgresInstaller
     public const string SuperUser = "postgres";
     public const string SuperPassword = "j06gOuqDHwWkvpWf";
     public const int PreferredServerPort = 5433;
+    private const string PostgresCredentialId = "OilCtrl.PostgreSQL.Postgres";
+    private const string OilCtrlAdministratorUser = "administrator";
+    private const string OilCtrlAdministratorPassword = "administrator";
+    private const string OilCtrlAdministratorDisplayName = "Администратор";
 
     private static readonly Encoding Utf8NoBom = new UTF8Encoding(false);
+    private static readonly string[] OilCtrlApplicationRoles = ["reader", "operator", "master", "configurator", "admin"];
     private const string LinuxClusterNamePrefix = "oilctrl";
     private const string LinuxPostgresVersion = "16";
 
@@ -258,6 +266,10 @@ public sealed class NativePostgresInstaller
             log(Format(AppStrings.InstallerDatabaseExistsLog, ("Database", DatabaseName)));
         }
 
+        await EnsurePostgresCredentialExistsAsync(log, cancellationToken);
+        await EnsureOilCtrlAdministratorRoleAsync(psqlPath, port, log, cancellationToken);
+        EnsureSharedAppSettingsExists(port);
+
         log(AppStrings.InstallerApplyingInitSqlLog);
         await RunProcessAsync(
             psqlPath,
@@ -265,6 +277,163 @@ public sealed class NativePostgresInstaller
             log,
             cancellationToken,
             new Dictionary<string, string> { ["PGPASSWORD"] = SuperPassword });
+    }
+
+    private static async Task EnsurePostgresCredentialExistsAsync(Action<string> log, CancellationToken cancellationToken)
+    {
+        var credentialProvider = DatabaseCredentialProvider.Create();
+        string? existingPassword = null;
+        try
+        {
+            existingPassword = credentialProvider.GetPassword(PostgresCredentialId);
+        }
+        catch (InvalidOperationException)
+        {
+            // Existing credential was created by an older provider format.
+            // Recreate it with the current platform credential provider.
+        }
+
+        if (string.Equals(existingPassword, SuperPassword, StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        if (OperatingSystem.IsWindows())
+        {
+            await SavePostgresCredentialWithElevatedHelperAsync(log, cancellationToken);
+            return;
+        }
+
+        credentialProvider.SavePassword(PostgresCredentialId, SuperPassword);
+    }
+
+    private static async Task SavePostgresCredentialWithElevatedHelperAsync(
+        Action<string> log,
+        CancellationToken cancellationToken)
+    {
+        var passwordPath = Path.Combine(Path.GetTempPath(), $"oilctrl-postgres-credential-{Guid.NewGuid():N}.txt");
+        await File.WriteAllTextAsync(passwordPath, SuperPassword, Utf8NoBom, cancellationToken);
+
+        try
+        {
+            var (fileName, arguments) = GetCurrentApplicationCommandLine(
+                "--pyramid-save-database-credential",
+                PostgresCredentialId,
+                passwordPath);
+
+            var result = await RunProcessAsync(
+                fileName,
+                arguments,
+                log,
+                cancellationToken,
+                runAsAdmin: true,
+                throwOnError: false);
+
+            if (result.ExitCode != 0)
+            {
+                throw new InvalidOperationException("Failed to create Windows machine database credential. Run Pyramid as administrator and repeat PostgreSQL installation.");
+            }
+        }
+        finally
+        {
+            TryDeleteFile(passwordPath);
+        }
+    }
+
+    private static (string FileName, IReadOnlyList<string> Arguments) GetCurrentApplicationCommandLine(params string[] maintenanceArguments)
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            var entryAssemblyPath = Environment.ProcessPath;
+            var currentDirectory = AppContext.BaseDirectory;
+            var dllPath = Path.Combine(currentDirectory, "Pyramid.dll");
+
+            if (!string.IsNullOrWhiteSpace(entryAssemblyPath) &&
+                string.Equals(Path.GetFileNameWithoutExtension(entryAssemblyPath), "dotnet", StringComparison.OrdinalIgnoreCase) &&
+                File.Exists(dllPath))
+            {
+                return (entryAssemblyPath, new[] { dllPath }.Concat(maintenanceArguments).ToArray());
+            }
+
+            if (!string.IsNullOrWhiteSpace(entryAssemblyPath))
+            {
+                return (entryAssemblyPath, maintenanceArguments);
+            }
+        }
+
+        throw new InvalidOperationException("Current application executable path was not found.");
+    }
+
+    private static async Task EnsureOilCtrlAdministratorRoleAsync(
+        string psqlPath,
+        int port,
+        Action<string> log,
+        CancellationToken cancellationToken)
+    {
+        var scriptPath = Path.Combine(Path.GetTempPath(), $"oilctrl-administrator-role-{Guid.NewGuid():N}.sql");
+        try
+        {
+            await File.WriteAllTextAsync(
+                scriptPath,
+                $$"""
+                DO $$
+                BEGIN
+                    {{CreateOilCtrlApplicationRolesSql()}}
+
+                    IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = '{{OilCtrlAdministratorUser}}') THEN
+                        CREATE ROLE {{OilCtrlAdministratorUser}} WITH
+                          LOGIN
+                          NOSUPERUSER
+                          INHERIT
+                          NOCREATEDB
+                          NOCREATEROLE
+                          NOREPLICATION
+                          NOBYPASSRLS;
+                    END IF;
+
+                    ALTER ROLE {{OilCtrlAdministratorUser}} WITH PASSWORD '{{EscapeSqlLiteral(OilCtrlAdministratorPassword)}}';
+                    COMMENT ON ROLE {{OilCtrlAdministratorUser}} IS '{{EscapeSqlLiteral(OilCtrlAdministratorDisplayName)}}';
+                    GRANT admin TO {{OilCtrlAdministratorUser}};
+                END
+                $$;
+                """,
+                Utf8NoBom,
+                cancellationToken);
+
+            await RunProcessAsync(
+                psqlPath,
+                new[] { "-h", "localhost", "-p", port.ToString(), "-U", SuperUser, "-d", "postgres", "-f", scriptPath },
+                log,
+                cancellationToken,
+                new Dictionary<string, string> { ["PGPASSWORD"] = SuperPassword });
+        }
+        finally
+        {
+            TryDeleteFile(scriptPath);
+        }
+    }
+
+    private static string CreateOilCtrlApplicationRolesSql()
+    {
+        var builder = new StringBuilder();
+        foreach (var role in OilCtrlApplicationRoles)
+        {
+            builder.AppendLine($$"""
+                    IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = '{{role}}') THEN
+                        CREATE ROLE {{role}} WITH
+                          NOLOGIN
+                          NOSUPERUSER
+                          INHERIT
+                          NOCREATEDB
+                          NOCREATEROLE
+                          NOREPLICATION
+                          NOBYPASSRLS;
+                    END IF;
+
+                """);
+        }
+
+        return builder.ToString().TrimEnd();
     }
 
     private static string? FindWindowsInstaller()
@@ -399,7 +568,20 @@ public sealed class NativePostgresInstaller
         var config = File.ReadAllText(configPath, Encoding.UTF8);
         config = Regex.Replace(config, @"(?m)^\s*#?\s*port\s*=.*$", $"port = {port}");
         config = Regex.Replace(config, @"(?m)^\s*#?\s*listen_addresses\s*=.*$", "listen_addresses = 'localhost'");
+        config = SetPostgresConfigValue(config, "lc_messages", "'C'");
         File.WriteAllText(configPath, config, Utf8NoBom);
+    }
+
+    private static string SetPostgresConfigValue(string config, string name, string value)
+    {
+        var pattern = $@"(?m)^\s*#?\s*{Regex.Escape(name)}\s*=.*$";
+        var replacement = $"{name} = {value}";
+        if (Regex.IsMatch(config, pattern))
+        {
+            return Regex.Replace(config, pattern, replacement);
+        }
+
+        return config.TrimEnd() + Environment.NewLine + replacement + Environment.NewLine;
     }
 
     private static async Task RegisterAndStartWindowsServiceAsync(
@@ -1238,6 +1420,11 @@ public sealed class NativePostgresInstaller
             fi
             sed -i -E "s/^[#[:space:]]*port[[:space:]]*=.*/port = {{port}}/" /etc/postgresql/{{LinuxPostgresVersion}}/{{clusterName}}/postgresql.conf
             sed -i -E "s/^[#[:space:]]*listen_addresses[[:space:]]*=.*/listen_addresses = 'localhost'/" /etc/postgresql/{{LinuxPostgresVersion}}/{{clusterName}}/postgresql.conf
+            if grep -Eq "^[#[:space:]]*lc_messages[[:space:]]*=" /etc/postgresql/{{LinuxPostgresVersion}}/{{clusterName}}/postgresql.conf; then
+              sed -i -E "s/^[#[:space:]]*lc_messages[[:space:]]*=.*/lc_messages = 'C'/" /etc/postgresql/{{LinuxPostgresVersion}}/{{clusterName}}/postgresql.conf
+            else
+              printf "\nlc_messages = 'C'\n" >> /etc/postgresql/{{LinuxPostgresVersion}}/{{clusterName}}/postgresql.conf
+            fi
             {{CreateLinuxSystemdServiceScript(LinuxPostgresVersion, clusterName)}}
             systemctl restart {{ShellQuote(GetLinuxServiceName(clusterName))}}
             systemctl enable {{ShellQuote(GetLinuxServiceName(clusterName))}}
@@ -1430,25 +1617,62 @@ public sealed class NativePostgresInstaller
                     "AppliedOn" timestamp without time zone,
                     "Description" character varying(1024) COLLATE pg_catalog."default"
                 );
-
-                DO $$
-                BEGIN
-                    IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'admin') THEN
-                        CREATE ROLE admin WITH
-                          LOGIN
-                          NOSUPERUSER
-                          INHERIT
-                          NOCREATEDB
-                          NOCREATEROLE
-                          NOREPLICATION
-                          NOBYPASSRLS
-                          ENCRYPTED PASSWORD 'SCRAM-SHA-256$4096:XPe2t0Z2+Xetr89Br7Db4w==$MxCBd6ZBaQEovqc+gWfkJwkM+zPE8HoizfQ2Rb1hTvU=:kgK0h76Tb1gKWnxMmIH0w0kxL5v4m9Mx4/kqbyMMywQ=';
-                    END IF;
-                END
-                $$;
                 """,
                 Utf8NoBom);
         }
+    }
+
+    private static void EnsureSharedAppSettingsExists(int port)
+    {
+        var sharedRoot = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, ".."));
+        if (!LooksLikeSingleBundleRoot(sharedRoot))
+        {
+            return;
+        }
+
+        var sharedSettingsPath = Path.Combine(sharedRoot, "appsettings.json");
+        var directory = Path.GetDirectoryName(sharedSettingsPath);
+        if (!string.IsNullOrWhiteSpace(directory))
+        {
+            Directory.CreateDirectory(directory);
+        }
+
+        JsonObject root;
+        if (File.Exists(sharedSettingsPath))
+        {
+            root = JsonNode.Parse(File.ReadAllText(sharedSettingsPath, Encoding.UTF8)) as JsonObject
+                ?? new JsonObject();
+        }
+        else
+        {
+            root = new JsonObject();
+        }
+
+        if (root["Database"] is not JsonObject database)
+        {
+            database = new JsonObject();
+            root["Database"] = database;
+        }
+
+        database["Host"] = "localhost";
+        database["Username"] = SuperUser;
+        database["Password"] = string.Empty;
+        database["CredentialID"] = PostgresCredentialId;
+        database["DBName"] = DatabaseName;
+        database["Port"] = port.ToString();
+
+        File.WriteAllText(
+            sharedSettingsPath,
+            root.ToJsonString(new JsonSerializerOptions { WriteIndented = true }),
+            Utf8NoBom);
+    }
+
+    private static bool LooksLikeSingleBundleRoot(string directory)
+    {
+        return Directory.Exists(Path.Combine(directory, "Pyramid"))
+            && Directory.Exists(Path.Combine(directory, "OilCtrlCfg"))
+            && Directory.Exists(Path.Combine(directory, "ASNCtrl_Linux"))
+            && Directory.Exists(Path.Combine(directory, "R_Designer_L"));
     }
 
     private static async Task<ProcessResult> RunProcessAsync(

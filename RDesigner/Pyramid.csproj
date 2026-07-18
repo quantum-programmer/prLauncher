@@ -72,6 +72,10 @@
       <PyramidPublishRoot>$(MSBuildProjectDirectory)\..\publish\$(SelfContainedPublishFolderName)</PyramidPublishRoot>
       <OilCtrlCfgProject>$(MSBuildProjectDirectory)\..\..\OilCtrlCfg\OilCtrlCfg\OilCtrlCfg.csproj</OilCtrlCfgProject>
       <OilCtrlCfgPublishRoot>$(MSBuildProjectDirectory)\..\..\OilCtrlCfg\publish\$(SelfContainedPublishFolderName)</OilCtrlCfgPublishRoot>
+      <ASNCtrlLinuxProject>$(MSBuildProjectDirectory)\..\..\..\ASNCtrl_Linux\ARM\ARM.csproj</ASNCtrlLinuxProject>
+      <ASNCtrlLinuxPublishRoot>$(MSBuildProjectDirectory)\..\..\..\ASNCtrl_Linux\publish\$(SelfContainedPublishFolderName)</ASNCtrlLinuxPublishRoot>
+      <RDesignerLProject>$(MSBuildProjectDirectory)\..\..\R_Designer_L\RDesigner\RDesigner.csproj</RDesignerLProject>
+      <RDesignerLPublishRoot>$(MSBuildProjectDirectory)\..\..\R_Designer_L\publish\$(SelfContainedPublishFolderName)</RDesignerLPublishRoot>
       <SelfContainedPublishProperties>-p:PublishSingleFile=false -p:PublishTrimmed=false</SelfContainedPublishProperties>
     </PropertyGroup>
 
@@ -86,6 +90,18 @@
 
     <Message Importance="High" Text="Publishing OilCtrlCfg self-contained $(SelfContainedPublishConfiguration) linux-x64..." />
     <Exec Command="dotnet publish &quot;$(OilCtrlCfgProject)&quot; -c $(SelfContainedPublishConfiguration) -r linux-x64 --self-contained true $(SelfContainedPublishProperties) -o &quot;$(OilCtrlCfgPublishRoot)\linux-x64&quot;" />
+
+    <Message Importance="High" Text="Publishing ASNCtrl_Linux self-contained $(SelfContainedPublishConfiguration) win-x64..." />
+    <Exec Command="dotnet publish &quot;$(ASNCtrlLinuxProject)&quot; -c $(SelfContainedPublishConfiguration) -r win-x64 --self-contained true $(SelfContainedPublishProperties) -o &quot;$(ASNCtrlLinuxPublishRoot)\win-x64&quot;" />
+
+    <Message Importance="High" Text="Publishing ASNCtrl_Linux self-contained $(SelfContainedPublishConfiguration) linux-x64..." />
+    <Exec Command="dotnet publish &quot;$(ASNCtrlLinuxProject)&quot; -c $(SelfContainedPublishConfiguration) -r linux-x64 --self-contained true $(SelfContainedPublishProperties) -o &quot;$(ASNCtrlLinuxPublishRoot)\linux-x64&quot;" />
+
+    <Message Importance="High" Text="Publishing R_Designer_L self-contained $(SelfContainedPublishConfiguration) win-x64..." />
+    <Exec Command="dotnet publish &quot;$(RDesignerLProject)&quot; -c $(SelfContainedPublishConfiguration) -r win-x64 --self-contained true $(SelfContainedPublishProperties) -o &quot;$(RDesignerLPublishRoot)\win-x64&quot;" />
+
+    <Message Importance="High" Text="Publishing R_Designer_L self-contained $(SelfContainedPublishConfiguration) linux-x64..." />
+    <Exec Command="dotnet publish &quot;$(RDesignerLProject)&quot; -c $(SelfContainedPublishConfiguration) -r linux-x64 --self-contained true $(SelfContainedPublishProperties) -o &quot;$(RDesignerLPublishRoot)\linux-x64&quot;" />
   </Target>
 
   <Target Name="PublishSelfContainedSingleProductBuilds"
@@ -94,6 +110,8 @@
     <PropertyGroup>
       <SelfContainedSingleRoot>$(MSBuildProjectDirectory)\..\publish\single</SelfContainedSingleRoot>
       <OilCtrlCfgProject>$(MSBuildProjectDirectory)\..\..\OilCtrlCfg\OilCtrlCfg\OilCtrlCfg.csproj</OilCtrlCfgProject>
+      <ASNCtrlLinuxProject>$(MSBuildProjectDirectory)\..\..\..\ASNCtrl_Linux\ARM\ARM.csproj</ASNCtrlLinuxProject>
+      <RDesignerLProject>$(MSBuildProjectDirectory)\..\..\R_Designer_L\RDesigner\RDesigner.csproj</RDesignerLProject>
       <SelfContainedPublishProperties>-p:PublishSingleFile=false -p:PublishTrimmed=false</SelfContainedPublishProperties>
     </PropertyGroup>
 
@@ -113,5 +131,31 @@
 
     <Message Importance="High" Text="Publishing single bundle: OilCtrlCfg self-contained $(SelfContainedPublishConfiguration) linux-x64..." />
     <Exec Command="dotnet publish &quot;$(OilCtrlCfgProject)&quot; -c $(SelfContainedPublishConfiguration) -r linux-x64 --self-contained true $(SelfContainedPublishProperties) -o &quot;$(SelfContainedSingleRoot)\linux-x64\$(SelfContainedSingleFolderName)\OilCtrlCfg&quot;" />
+
+    <Message Importance="High" Text="Publishing single bundle: ASNCtrl_Linux self-contained $(SelfContainedPublishConfiguration) win-x64..." />
+    <Exec Command="dotnet publish &quot;$(ASNCtrlLinuxProject)&quot; -c $(SelfContainedPublishConfiguration) -r win-x64 --self-contained true $(SelfContainedPublishProperties) -o &quot;$(SelfContainedSingleRoot)\win-x64\$(SelfContainedSingleFolderName)\ASNCtrl_Linux&quot;" />
+
+    <Message Importance="High" Text="Publishing single bundle: ASNCtrl_Linux self-contained $(SelfContainedPublishConfiguration) linux-x64..." />
+    <Exec Command="dotnet publish &quot;$(ASNCtrlLinuxProject)&quot; -c $(SelfContainedPublishConfiguration) -r linux-x64 --self-contained true $(SelfContainedPublishProperties) -o &quot;$(SelfContainedSingleRoot)\linux-x64\$(SelfContainedSingleFolderName)\ASNCtrl_Linux&quot;" />
+
+    <Message Importance="High" Text="Publishing single bundle: R_Designer_L self-contained $(SelfContainedPublishConfiguration) win-x64..." />
+    <Exec Command="dotnet publish &quot;$(RDesignerLProject)&quot; -c $(SelfContainedPublishConfiguration) -r win-x64 --self-contained true $(SelfContainedPublishProperties) -o &quot;$(SelfContainedSingleRoot)\win-x64\$(SelfContainedSingleFolderName)\R_Designer_L&quot;" />
+
+    <Message Importance="High" Text="Publishing single bundle: R_Designer_L self-contained $(SelfContainedPublishConfiguration) linux-x64..." />
+    <Exec Command="dotnet publish &quot;$(RDesignerLProject)&quot; -c $(SelfContainedPublishConfiguration) -r linux-x64 --self-contained true $(SelfContainedPublishProperties) -o &quot;$(SelfContainedSingleRoot)\linux-x64\$(SelfContainedSingleFolderName)\R_Designer_L&quot;" />
+
+    <Copy SourceFiles="$(MSBuildProjectDirectory)\..\appsettings.json"
+          DestinationFiles="$(SelfContainedSingleRoot)\win-x64\$(SelfContainedSingleFolderName)\appsettings.json" />
+    <Copy SourceFiles="$(MSBuildProjectDirectory)\..\appsettings.json"
+          DestinationFiles="$(SelfContainedSingleRoot)\linux-x64\$(SelfContainedSingleFolderName)\appsettings.json" />
+
+    <Delete Files="$(SelfContainedSingleRoot)\win-x64\$(SelfContainedSingleFolderName)\Pyramid\appsettings.json" />
+    <Delete Files="$(SelfContainedSingleRoot)\win-x64\$(SelfContainedSingleFolderName)\OilCtrlCfg\appsettings.json" />
+    <Delete Files="$(SelfContainedSingleRoot)\win-x64\$(SelfContainedSingleFolderName)\ASNCtrl_Linux\appsettings.json" />
+    <Delete Files="$(SelfContainedSingleRoot)\win-x64\$(SelfContainedSingleFolderName)\R_Designer_L\appsettings.json" />
+    <Delete Files="$(SelfContainedSingleRoot)\linux-x64\$(SelfContainedSingleFolderName)\Pyramid\appsettings.json" />
+    <Delete Files="$(SelfContainedSingleRoot)\linux-x64\$(SelfContainedSingleFolderName)\OilCtrlCfg\appsettings.json" />
+    <Delete Files="$(SelfContainedSingleRoot)\linux-x64\$(SelfContainedSingleFolderName)\ASNCtrl_Linux\appsettings.json" />
+    <Delete Files="$(SelfContainedSingleRoot)\linux-x64\$(SelfContainedSingleFolderName)\R_Designer_L\appsettings.json" />
   </Target>
 </Project>
