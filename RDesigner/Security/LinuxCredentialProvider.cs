@@ -1,8 +1,8 @@
 using System;
-using System.ComponentModel;
-using System.Diagnostics;
 using System.IO;
+using System.Security.Cryptography;
 using System.Text;
+using System.Text.Json;
 using System.Text.RegularExpressions;
 
 namespace Pyramid.Security;
@@ -10,6 +10,11 @@ namespace Pyramid.Security;
 internal sealed class LinuxCredentialProvider : IDatabaseCredentialProvider
 {
     private const string CredentialDirectory = "/etc/pyramid/credentials";
+    private const string MachineKeyPath = "/etc/pyramid/credentials/pyramid-machine-key.v1";
+    private const string PayloadPrefix = "pyramid-linux-machine-aes-gcm:v1:";
+    private const int KeySize = 32;
+    private const int NonceSize = 12;
+    private const int TagSize = 16;
 
     private static readonly Regex SafeNameRegex = new(@"[^A-Za-z0-9_.-]", RegexOptions.Compiled);
 
@@ -21,31 +26,59 @@ internal sealed class LinuxCredentialProvider : IDatabaseCredentialProvider
             return null;
         }
 
-        var result = RunSystemdCreds("decrypt", path, "-");
-        if (result.ExitCode != 0)
+        var text = File.ReadAllText(path, Encoding.UTF8).Trim();
+        if (!text.StartsWith(PayloadPrefix, StringComparison.Ordinal))
         {
-            throw new InvalidOperationException($"Failed to decrypt Linux database credential '{credentialId}': {result.Error.Trim()}");
+            throw new InvalidOperationException(
+                $"Linux database credential '{credentialId}' was created by an older systemd-creds provider. Recreate it with Pyramid.");
         }
 
-        return result.Output.TrimEnd('\r', '\n');
+        var payload = JsonSerializer.Deserialize<EncryptedCredential>(
+            Encoding.UTF8.GetString(Convert.FromBase64String(text[PayloadPrefix.Length..])))
+            ?? throw new InvalidOperationException($"Linux database credential '{credentialId}' payload is invalid.");
+
+        if (!string.Equals(payload.CredentialID, credentialId, StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException("Database credential payload does not match requested CredentialID.");
+        }
+
+        var key = ReadMachineKey();
+        var nonce = Convert.FromBase64String(payload.Nonce);
+        var tag = Convert.FromBase64String(payload.Tag);
+        var ciphertext = Convert.FromBase64String(payload.Ciphertext);
+        var plaintext = new byte[ciphertext.Length];
+        var associatedData = Encoding.UTF8.GetBytes(credentialId);
+
+        using var aes = new AesGcm(key, TagSize);
+        aes.Decrypt(nonce, ciphertext, tag, plaintext, associatedData);
+
+        return Encoding.UTF8.GetString(plaintext);
     }
 
     public void SavePassword(string credentialId, string password)
     {
+        Directory.CreateDirectory(CredentialDirectory);
+        var key = EnsureMachineKey();
+        var nonce = RandomNumberGenerator.GetBytes(NonceSize);
+        var plaintext = Encoding.UTF8.GetBytes(password);
+        var ciphertext = new byte[plaintext.Length];
+        var tag = new byte[TagSize];
+        var associatedData = Encoding.UTF8.GetBytes(credentialId);
+
+        using (var aes = new AesGcm(key, TagSize))
+        {
+            aes.Encrypt(nonce, plaintext, ciphertext, tag, associatedData);
+        }
+
+        var payload = new EncryptedCredential(
+            credentialId,
+            Convert.ToBase64String(nonce),
+            Convert.ToBase64String(tag),
+            Convert.ToBase64String(ciphertext));
+
+        var serializedPayload = Convert.ToBase64String(Encoding.UTF8.GetBytes(JsonSerializer.Serialize(payload)));
         var path = GetCredentialPath(credentialId);
-        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
-
-        var result = RunSystemdCreds("encrypt", "--with-key=tpm2", "-", path, password);
-        if (result.ExitCode != 0)
-        {
-            result = RunSystemdCreds("encrypt", "--with-key=host", "-", path, password);
-        }
-
-        if (result.ExitCode != 0)
-        {
-            throw new InvalidOperationException($"Failed to encrypt Linux database credential '{credentialId}' with systemd-creds: {result.Error.Trim()}");
-        }
-
+        File.WriteAllText(path, PayloadPrefix + serializedPayload, new UTF8Encoding(false));
         TrySetMachineCredentialPermissions(path);
     }
 
@@ -55,81 +88,72 @@ internal sealed class LinuxCredentialProvider : IDatabaseCredentialProvider
         return Path.Combine(CredentialDirectory, $"{safeName}.credential");
     }
 
-    private static ProcessResult RunSystemdCreds(params string[] arguments) =>
-        RunSystemdCreds(arguments, null);
-
-    private static ProcessResult RunSystemdCreds(string arg1, string arg2, string arg3, string arg4, string? standardInput = null) =>
-        RunSystemdCreds(new[] { arg1, arg2, arg3, arg4 }, standardInput);
-
-    private static ProcessResult RunSystemdCreds(string arg1, string arg2, string arg3, string? standardInput = null) =>
-        RunSystemdCreds(new[] { arg1, arg2, arg3 }, standardInput);
-
-    private static ProcessResult RunSystemdCreds(string[] arguments, string? standardInput)
+    private static byte[] EnsureMachineKey()
     {
-        var startInfo = new ProcessStartInfo
+        if (File.Exists(MachineKeyPath))
         {
-            FileName = "systemd-creds",
-            UseShellExecute = false,
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-            RedirectStandardInput = standardInput is not null,
-            StandardOutputEncoding = Encoding.UTF8,
-            StandardErrorEncoding = Encoding.UTF8
-        };
-
-        foreach (var argument in arguments)
-        {
-            startInfo.ArgumentList.Add(argument);
+            return ReadMachineKey();
         }
 
-        try
-        {
-            using var process = Process.Start(startInfo)
-                ?? throw new InvalidOperationException("Failed to start systemd-creds.");
+        var key = RandomNumberGenerator.GetBytes(KeySize);
+        File.WriteAllText(MachineKeyPath, Convert.ToBase64String(key), new UTF8Encoding(false));
+        TrySetMachineCredentialPermissions(MachineKeyPath);
+        return key;
+    }
 
-            if (standardInput is not null)
-            {
-                process.StandardInput.Write(standardInput);
-                process.StandardInput.Close();
-            }
-
-            var output = process.StandardOutput.ReadToEnd();
-            var error = process.StandardError.ReadToEnd();
-            process.WaitForExit();
-            return new ProcessResult(process.ExitCode, output, error);
-        }
-        catch (Win32Exception ex)
+    private static byte[] ReadMachineKey()
+    {
+        if (!File.Exists(MachineKeyPath))
         {
-            throw new InvalidOperationException("systemd-creds was not found. Install systemd-creds or configure a supported Linux credential provider.", ex);
+            throw new FileNotFoundException(
+                "Linux machine credential key was not found. Run Pyramid installation to create credentials.",
+                MachineKeyPath);
         }
+
+        var key = Convert.FromBase64String(File.ReadAllText(MachineKeyPath, Encoding.UTF8).Trim());
+        if (key.Length != KeySize)
+        {
+            throw new InvalidOperationException("Linux machine credential key has invalid size.");
+        }
+
+        return key;
     }
 
     private static void TrySetMachineCredentialPermissions(string path)
     {
+        if (!OperatingSystem.IsLinux())
+        {
+            return;
+        }
+
         try
         {
-            RunChmod("755", Path.GetDirectoryName(CredentialDirectory)!);
-            RunChmod("755", CredentialDirectory);
-            RunChmod("644", path);
+            Directory.CreateDirectory(CredentialDirectory);
+            File.SetUnixFileMode(
+                Path.GetDirectoryName(CredentialDirectory)!,
+                UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute |
+                UnixFileMode.GroupRead | UnixFileMode.GroupExecute |
+                UnixFileMode.OtherRead | UnixFileMode.OtherExecute);
+            File.SetUnixFileMode(
+                CredentialDirectory,
+                UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute |
+                UnixFileMode.GroupRead | UnixFileMode.GroupExecute |
+                UnixFileMode.OtherRead | UnixFileMode.OtherExecute);
+            File.SetUnixFileMode(
+                path,
+                UnixFileMode.UserRead | UnixFileMode.UserWrite |
+                UnixFileMode.GroupRead |
+                UnixFileMode.OtherRead);
         }
         catch
         {
-            // Best effort only. systemd-creds still stores encrypted data.
+            // Best effort only. The credential payload still remains encrypted.
         }
     }
 
-    private static void RunChmod(string mode, string path)
-    {
-        using var process = Process.Start(new ProcessStartInfo
-        {
-            FileName = "chmod",
-            UseShellExecute = false,
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-            ArgumentList = { mode, path }
-        });
-        process?.WaitForExit();
-    }
-
-    private sealed record ProcessResult(int ExitCode, string Output, string Error);
+    private sealed record EncryptedCredential(
+        string CredentialID,
+        string Nonce,
+        string Tag,
+        string Ciphertext);
 }

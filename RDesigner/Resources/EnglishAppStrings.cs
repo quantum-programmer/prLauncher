@@ -15,17 +15,18 @@ public static class EnglishAppStrings
     public const string AboutAssemblyVersion = "Assembly version:";
     public const string AboutFileVersion = "File version:";
 
-    public const string InstallerTitle = "OilCtrl Installer";
-    public const string InstallerSubtitle = "Native PostgreSQL 16.14 installation and initial OilCtrl database setup";
-    public const string InstallerInstallFolder = "Install folder";
+    public const string InstallerTitle = "Pyramid";
+    public const string InstallerSubtitle = "Installation";
+    public const string InstallerInstallFolder = "PostgreSQL install folder";
     public const string InstallerInstallFolderWatermark = "PostgreSQL installation folder";
     public const string InstallerBrowse = "Browse";
-    public const string InstallerSilentInstall = "Silent install";
+    public const string InstallerSilentInstall = "Install workstation";
     public const string InstallerRunWizard = "Run wizard";
     public const string InstallerCheckConnection = "Check connection";
     public const string InstallerCopy = "Copy";
-    public const string InstallerReadyStatus = "Ready to install PostgreSQL 16.14";
+    public const string InstallerReadyStatus = "Ready to install workstation";
     public const string InstallerInstallOperation = "PostgreSQL installation";
+    public const string InstallerArmInstallOperation = "Workstation installation";
     public const string InstallerWizardOperation = "PostgreSQL GUI installer";
     public const string InstallerCheckOperation = "PostgreSQL check";
     public const string InstallerCompletedStatus = "Operation completed";

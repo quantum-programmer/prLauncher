@@ -298,7 +298,7 @@ public sealed class NativePostgresInstaller
             return;
         }
 
-        if (OperatingSystem.IsWindows())
+        if (OperatingSystem.IsWindows() || OperatingSystem.IsLinux())
         {
             await SavePostgresCredentialWithElevatedHelperAsync(log, cancellationToken);
             return;
@@ -321,17 +321,31 @@ public sealed class NativePostgresInstaller
                 PostgresCredentialId,
                 passwordPath);
 
-            var result = await RunProcessAsync(
-                fileName,
-                arguments,
-                log,
-                cancellationToken,
-                runAsAdmin: true,
-                throwOnError: false);
+            ProcessResult result;
+            if (OperatingSystem.IsWindows())
+            {
+                result = await RunProcessAsync(
+                    fileName,
+                    arguments,
+                    log,
+                    cancellationToken,
+                    runAsAdmin: true,
+                    throwOnError: false);
+            }
+            else if (OperatingSystem.IsLinux())
+            {
+                var command = string.Join(" ", new[] { fileName }.Concat(arguments).Select(ShellQuote));
+                await RunLinuxPrivilegedScriptAsync(command, log, cancellationToken);
+                result = new ProcessResult(0, string.Empty, string.Empty);
+            }
+            else
+            {
+                throw new PlatformNotSupportedException("Machine database credential creation is supported only on Windows and Linux.");
+            }
 
             if (result.ExitCode != 0)
             {
-                throw new InvalidOperationException("Failed to create Windows machine database credential. Run Pyramid as administrator and repeat PostgreSQL installation.");
+                throw new InvalidOperationException("Failed to create machine database credential. Run Pyramid with administrator privileges and repeat installation.");
             }
         }
         finally
@@ -342,7 +356,7 @@ public sealed class NativePostgresInstaller
 
     private static (string FileName, IReadOnlyList<string> Arguments) GetCurrentApplicationCommandLine(params string[] maintenanceArguments)
     {
-        if (OperatingSystem.IsWindows())
+        if (OperatingSystem.IsWindows() || OperatingSystem.IsLinux())
         {
             var entryAssemblyPath = Environment.ProcessPath;
             var currentDirectory = AppContext.BaseDirectory;

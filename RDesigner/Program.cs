@@ -7,6 +7,7 @@ using System;
 using System.IO;
 using Pyramid.Resources;
 using Pyramid.Security;
+using Pyramid.Services;
 
 namespace Pyramid
 {
@@ -92,25 +93,62 @@ namespace Pyramid
         private static bool TryRunMaintenanceCommand(string[] args, out int exitCode)
         {
             exitCode = 0;
-            if (args.Length != 3 ||
-                !string.Equals(args[0], "--pyramid-save-database-credential", StringComparison.Ordinal))
+            if (args.Length == 3 &&
+                string.Equals(args[0], "--pyramid-save-database-credential", StringComparison.Ordinal))
             {
-                return false;
+                try
+                {
+                    var credentialId = args[1];
+                    var passwordFile = args[2];
+                    var password = File.ReadAllText(passwordFile);
+                    DatabaseCredentialProvider.Create().SavePassword(credentialId, password);
+                    return true;
+                }
+                catch
+                {
+                    exitCode = 1;
+                    return true;
+                }
             }
 
-            try
+            if (args.Length == 4 &&
+                string.Equals(args[0], "--pyramid-install-applications", StringComparison.Ordinal))
             {
-                var credentialId = args[1];
-                var passwordFile = args[2];
-                var password = File.ReadAllText(passwordFile);
-                DatabaseCredentialProvider.Create().SavePassword(credentialId, password);
-                return true;
+                try
+                {
+                    var sourceRoot = args[1];
+                    var targetRoot = args[2];
+                    var logPath = args[3];
+                    Directory.CreateDirectory(Path.GetDirectoryName(logPath)!);
+
+                    using var writer = new StreamWriter(logPath, append: false);
+                    ProductApplicationInstaller.InstallFromBundle(
+                        sourceRoot,
+                        targetRoot,
+                        message =>
+                        {
+                            writer.WriteLine(message);
+                            writer.Flush();
+                        });
+                    return true;
+                }
+                catch (Exception ex)
+                {
+                    try
+                    {
+                        File.AppendAllText(args[3], ex.Message + Environment.NewLine);
+                    }
+                    catch
+                    {
+                        // Nothing else can be reported from the maintenance process.
+                    }
+
+                    exitCode = 1;
+                    return true;
+                }
             }
-            catch
-            {
-                exitCode = 1;
-                return true;
-            }
+
+            return false;
         }
     }
 }

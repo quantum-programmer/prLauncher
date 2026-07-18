@@ -15,17 +15,18 @@ public static class AppStrings
     public static string AboutAssemblyVersion = "Версия сборки:";
     public static string AboutFileVersion = "Версия файла:";
 
-    public static string InstallerTitle = "Установщик OilCtrl";
-    public static string InstallerSubtitle = "Нативная установка PostgreSQL 16.14 и первичная настройка базы OilCtrl";
-    public static string InstallerInstallFolder = "Папка установки";
+    public static string InstallerTitle = "Pyramid";
+    public static string InstallerSubtitle = "Установка";
+    public static string InstallerInstallFolder = "Папка установки PostgreSQL";
     public static string InstallerInstallFolderWatermark = "Папка установки PostgreSQL";
     public static string InstallerBrowse = "Обзор";
-    public static string InstallerSilentInstall = "Тихая установка";
+    public static string InstallerSilentInstall = "Установить АРМ";
     public static string InstallerRunWizard = "Запустить мастер";
     public static string InstallerCheckConnection = "Проверить подключение";
     public static string InstallerCopy = "Копировать";
-    public static string InstallerReadyStatus = "Готов к установке PostgreSQL 16.14";
+    public static string InstallerReadyStatus = "Готов к установке АРМ";
     public static string InstallerInstallOperation = "Установка PostgreSQL";
+    public static string InstallerArmInstallOperation = "Установка АРМ";
     public static string InstallerWizardOperation = "Мастер установки PostgreSQL";
     public static string InstallerCheckOperation = "Проверка PostgreSQL";
     public static string InstallerCompletedStatus = "Операция выполнена";
