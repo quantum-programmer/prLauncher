@@ -15,7 +15,7 @@
                 <TextBlock Text="Pyramid"
                            FontSize="34"
                            FontWeight="SemiBold" />
-                <TextBlock Text="Добро пожаловать в программу установки АРМ «Промприбор»"
+                <TextBlock Text="{DynamicResource InstallerWelcomeText}"
                            FontSize="18"
                            Foreground="#424242" />
             </StackPanel>
@@ -34,10 +34,10 @@
                         Foreground="White"
                         HorizontalContentAlignment="Stretch">
                     <StackPanel Spacing="8">
-                        <TextBlock Text="Установка АРМ Сервер"
+                        <TextBlock Text="{DynamicResource InstallerServerInstallTitle}"
                                    FontSize="20"
                                    FontWeight="SemiBold" />
-                        <TextBlock Text="Устанавливается клиентская и серверная часть ПО на одном компьютере. Работа с единой базой данных."
+                        <TextBlock Text="{DynamicResource InstallerServerInstallDescription}"
                                    TextWrapping="Wrap"
                                    FontSize="14"
                                    Opacity="0.92" />
@@ -53,10 +53,10 @@
                         IsEnabled="False"
                         HorizontalContentAlignment="Stretch">
                     <StackPanel Spacing="8">
-                        <TextBlock Text="Установка АРМ Клиент"
+                        <TextBlock Text="{DynamicResource InstallerClientInstallTitle}"
                                    FontSize="20"
                                    FontWeight="SemiBold" />
-                        <TextBlock Text="Устанавливаются только клиентские компоненты. Пользователи работают с общей БД с нескольких рабочих мест."
+                        <TextBlock Text="{DynamicResource InstallerClientInstallDescription}"
                                    TextWrapping="Wrap"
                                    FontSize="14"
                                    Opacity="0.92" />
@@ -75,10 +75,10 @@
                         HorizontalAlignment="Center"
                         HorizontalContentAlignment="Stretch">
                     <StackPanel Spacing="8">
-                        <TextBlock Text="Дополнительно"
+                        <TextBlock Text="{DynamicResource InstallerAdvancedTitle}"
                                    FontSize="20"
                                    FontWeight="SemiBold" />
-                        <TextBlock Text="Дополнительные сценарии установки и обслуживания будут доступны позже."
+                        <TextBlock Text="{DynamicResource InstallerAdvancedDescription}"
                                    TextWrapping="Wrap"
                                    FontSize="14"
                                    Opacity="0.92" />
@@ -89,9 +89,27 @@
 
         <Grid IsVisible="{Binding IsServerInstallVisible}"
               RowDefinitions="Auto,Auto,Auto,*">
-            <TextBlock Text="{DynamicResource InstallerSubtitle}"
-                       FontSize="28"
-                       FontWeight="SemiBold" />
+            <Grid ColumnDefinitions="Auto,Auto,*">
+                <Button Command="{Binding BackToWelcomeCommand}"
+                        Width="36"
+                        Height="32"
+                        Padding="0"
+                        Margin="0 1 12 0"
+                        Background="Transparent"
+                        BorderBrush="#B8C5D6"
+                        Foreground="#0B63CE"
+                        ToolTip.Tip="{DynamicResource InstallerBackButton}">
+                    <TextBlock Text="←"
+                               FontSize="22"
+                               FontWeight="SemiBold"
+                               HorizontalAlignment="Center"
+                               VerticalAlignment="Center" />
+                </Button>
+                <TextBlock Grid.Column="1"
+                           Text="{DynamicResource InstallerSubtitle}"
+                           FontSize="28"
+                           FontWeight="SemiBold" />
+            </Grid>
 
             <Grid Grid.Row="1"
                   ColumnDefinitions="Auto,*,Auto"
@@ -115,14 +133,14 @@
 
             <TextBlock Grid.Row="1"
                        IsVisible="{Binding IsLinux}"
-                       Text="PostgreSQL в Linux устанавливается системно из офлайн-пакетов. Папка установки PostgreSQL выбирается пакетным менеджером."
+                       Text="{DynamicResource InstallerLinuxPostgresSystemInstallNote}"
                        Foreground="#555"
                        FontSize="14"
                        Margin="0 18 0 8"
                        TextWrapping="Wrap" />
 
             <Grid Grid.Row="2"
-                  ColumnDefinitions="Auto,*"
+                  ColumnDefinitions="Auto,Auto,Auto,*"
                   Margin="0 8 0 18">
                 <Button Content="{DynamicResource InstallerSilentInstall}"
                         Command="{Binding InstallArmCommand}"
@@ -130,6 +148,39 @@
                         Height="40"
                         Background="#0B63CE"
                         Foreground="White" />
+                <ProgressBar Grid.Column="1"
+                             IsVisible="{Binding IsArmInstallProgressVisible}"
+                             IsIndeterminate="True"
+                             Width="38"
+                             Height="8"
+                             Margin="12 0 0 0"
+                             VerticalAlignment="Center"
+                             Foreground="#1FA34A"
+                             Background="#D9F2E2" />
+                <TextBlock Grid.Column="1"
+                           IsVisible="{Binding IsArmInstallCompletedVisible}"
+                           Text="✓"
+                           Margin="12 0 0 0"
+                           VerticalAlignment="Center"
+                           FontSize="24"
+                           FontWeight="Bold"
+                           Foreground="#1FA34A" />
+                <TextBlock Grid.Column="2"
+                           IsVisible="{Binding IsArmInstallCancelledVisible}"
+                           Text="{DynamicResource InstallerArmInstallCancelledShort}"
+                           Margin="12 0 0 0"
+                           VerticalAlignment="Center"
+                           FontSize="14"
+                           FontWeight="SemiBold"
+                           Foreground="#C62828" />
+                <TextBlock Grid.Column="2"
+                           IsVisible="{Binding IsArmInstallSystemCancelledVisible}"
+                           Text="{DynamicResource InstallerArmInstallSystemCancelledShort}"
+                           Margin="12 0 0 0"
+                           VerticalAlignment="Center"
+                           FontSize="14"
+                           FontWeight="SemiBold"
+                           Foreground="#C62828" />
             </Grid>
 
             <Border Grid.Row="3"

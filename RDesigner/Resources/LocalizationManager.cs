@@ -40,6 +40,11 @@ public static class LocalizationManager
         Apply(CurrentLanguage);
     }
 
+    public static void UseLanguage(AppLanguage language)
+    {
+        Apply(language);
+    }
+
     public static void ToggleLanguage()
     {
         var language = CurrentLanguage == AppLanguage.Russian

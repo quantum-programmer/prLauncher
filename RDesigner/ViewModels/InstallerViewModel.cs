@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
@@ -28,6 +28,7 @@ public partial class InstallerViewModel : ViewModelBase
     [NotifyCanExecuteChangedFor(nameof(InstallPostgresCommand))]
     [NotifyCanExecuteChangedFor(nameof(InstallArmCommand))]
     [NotifyCanExecuteChangedFor(nameof(OpenServerInstallCommand))]
+    [NotifyCanExecuteChangedFor(nameof(BackToWelcomeCommand))]
     [NotifyCanExecuteChangedFor(nameof(RunPostgresWizardCommand))]
     [NotifyCanExecuteChangedFor(nameof(CheckPostgresCommand))]
     private bool isBusy;
@@ -46,6 +47,18 @@ public partial class InstallerViewModel : ViewModelBase
 
     [ObservableProperty]
     private bool isServerInstallVisible;
+
+    [ObservableProperty]
+    private bool isArmInstallProgressVisible;
+
+    [ObservableProperty]
+    private bool isArmInstallCompletedVisible;
+
+    [ObservableProperty]
+    private bool isArmInstallCancelledVisible;
+
+    [ObservableProperty]
+    private bool isArmInstallSystemCancelledVisible;
 
     public bool IsWindows => OperatingSystem.IsWindows();
 
@@ -68,6 +81,13 @@ public partial class InstallerViewModel : ViewModelBase
     }
 
     [RelayCommand(CanExecute = nameof(CanRun))]
+    private void BackToWelcome()
+    {
+        IsServerInstallVisible = false;
+        IsWelcomeVisible = true;
+    }
+
+    [RelayCommand(CanExecute = nameof(CanRun))]
     private async Task InstallPostgresAsync()
     {
         await RunAsync(() => AppStrings.InstallerInstallOperation, log => installer.InstallAsync(WindowsInstallDirectory, log));
@@ -77,17 +97,44 @@ public partial class InstallerViewModel : ViewModelBase
     private async Task InstallArmAsync()
     {
         ApplicationInstallResult? installResult = null;
+        var installCompleted = false;
+        var reinstallExisting = false;
+        ResetArmInstallIndicator();
+
+        if (applicationInstaller.IsArmInstalled())
+        {
+            var installRoot = applicationInstaller.GetArmInstallRoot();
+            AppendLog(AppStrings.InstallerArmAlreadyInstalledLog.Replace("{Directory}", installRoot, StringComparison.Ordinal));
+            reinstallExisting = await ConfirmReinstallArmAsync(installRoot);
+            if (!reinstallExisting)
+            {
+                AppendLog(AppStrings.InstallerArmInstallCancelledLog);
+                IsArmInstallCancelledVisible = true;
+                return;
+            }
+        }
+
+        IsArmInstallProgressVisible = true;
+
         await RunAsync(
             () => AppStrings.InstallerArmInstallOperation,
             async log =>
             {
-                await installer.InstallAsync(WindowsInstallDirectory, log);
-                installResult = await applicationInstaller.InstallAsync(log);
+                var postgresPort = await installer.InstallAsync(WindowsInstallDirectory, log);
+                installResult = await applicationInstaller.InstallAsync(postgresPort, reinstallExisting, log);
+                installCompleted = true;
             });
+
+        IsArmInstallProgressVisible = false;
 
         if (installResult is null)
         {
             return;
+        }
+
+        if (installCompleted)
+        {
+            IsArmInstallCompletedVisible = true;
         }
 
         if (await ConfirmLaunchOilCtrlCfgAsync())
@@ -99,18 +146,20 @@ public partial class InstallerViewModel : ViewModelBase
 
                 if (process.HasExited)
                 {
-                    AppendLog($"OilCtrlCfg запущен, но сразу завершился с кодом {process.ExitCode}: {installResult.OilCtrlCfgPath}");
+                    AppendLog(AppStrings.InstallerOilCtrlCfgExitedLog
+                        .Replace("{ExitCode}", process.ExitCode.ToString(), StringComparison.Ordinal)
+                        .Replace("{Path}", installResult.OilCtrlCfgPath, StringComparison.Ordinal));
                 }
                 else
                 {
-                    AppendLog($"OilCtrlCfg запущен: {installResult.OilCtrlCfgPath}");
+                    AppendLog(AppStrings.InstallerOilCtrlCfgStartedLog.Replace("{Path}", installResult.OilCtrlCfgPath, StringComparison.Ordinal));
                 }
             }
             catch (Exception ex)
             {
                 SetStatus(() => AppStrings.InstallerErrorStatus);
                 Log.Error(ex, "OilCtrlCfg launch failed.");
-                AppendLog($"Ошибка запуска OilCtrlCfg: {ex.Message}");
+                AppendLog(AppStrings.InstallerOilCtrlCfgLaunchFailedLog.Replace("{Message}", ex.Message, StringComparison.Ordinal));
             }
         }
     }
@@ -191,7 +240,35 @@ public partial class InstallerViewModel : ViewModelBase
         return !IsBusy;
     }
 
+    private void ResetArmInstallIndicator()
+    {
+        IsArmInstallProgressVisible = false;
+        IsArmInstallCompletedVisible = false;
+        IsArmInstallCancelledVisible = false;
+        IsArmInstallSystemCancelledVisible = false;
+    }
+
     private static async Task<bool> ConfirmLaunchOilCtrlCfgAsync()
+    {
+        return await ShowConfirmationDialogAsync(
+            "Pyramid",
+            AppStrings.InstallerLaunchOilCtrlCfgQuestion,
+            AppStrings.InstallerYesButton,
+            AppStrings.InstallerNoButton);
+    }
+
+    private static async Task<bool> ConfirmReinstallArmAsync(string installRoot)
+    {
+        return await ShowConfirmationDialogAsync(
+            "Pyramid",
+            AppStrings.InstallerArmReinstallQuestion
+                .Replace("{Directory}", installRoot, StringComparison.Ordinal)
+                .Replace("{NewLine}", Environment.NewLine, StringComparison.Ordinal),
+            AppStrings.InstallerArmReinstallButton,
+            AppStrings.InstallerCancelButton);
+    }
+
+    private static async Task<bool> ShowConfirmationDialogAsync(string title, string message, string yesText, string noText)
     {
         if (Application.Current?.ApplicationLifetime is not IClassicDesktopStyleApplicationLifetime desktop ||
             desktop.MainWindow is null)
@@ -202,17 +279,17 @@ public partial class InstallerViewModel : ViewModelBase
         var result = false;
         var window = new Window
         {
-            Title = "Pyramid",
+            Title = title,
             Width = 460,
-            Height = 180,
+            Height = 210,
             CanResize = false,
             WindowStartupLocation = WindowStartupLocation.CenterOwner
         };
 
         var yesButton = new Button
         {
-            Content = "Да",
-            MinWidth = 90,
+            Content = yesText,
+            MinWidth = 120,
             Height = 34,
             HorizontalContentAlignment = HorizontalAlignment.Center
         };
@@ -224,7 +301,7 @@ public partial class InstallerViewModel : ViewModelBase
 
         var noButton = new Button
         {
-            Content = "Нет",
+            Content = noText,
             MinWidth = 90,
             Height = 34,
             HorizontalContentAlignment = HorizontalAlignment.Center
@@ -243,7 +320,7 @@ public partial class InstallerViewModel : ViewModelBase
             {
                 new TextBlock
                 {
-                    Text = "Установка АРМ завершена. Запустить OilCtrlCfg для настройки базы данных?",
+                    Text = message,
                     TextWrapping = Avalonia.Media.TextWrapping.Wrap,
                     FontSize = 15
                 },
@@ -274,6 +351,14 @@ public partial class InstallerViewModel : ViewModelBase
             await operation(AppendLog);
             SetStatus(() => AppStrings.InstallerCompletedStatus);
             AppendLog(AppStrings.InstallerDoneLog);
+        }
+        catch (InstallerSystemCancelledException ex)
+        {
+            SetStatus(() => AppStrings.InstallerSystemCancelledStatus);
+            IsArmInstallProgressVisible = false;
+            IsArmInstallSystemCancelledVisible = true;
+            Log.Warning(ex, "Installer operation was cancelled by system validation.");
+            AppendLog(ex.Message);
         }
         catch (Exception ex)
         {

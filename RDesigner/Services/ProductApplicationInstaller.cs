@@ -5,10 +5,12 @@ using System.IO;
 using System.Linq;
 using System.Runtime.InteropServices;
 using System.Text;
+using System.Text.Encodings.Web;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Threading;
 using System.Threading.Tasks;
+using Pyramid.Resources;
 
 namespace Pyramid.Services;
 
@@ -25,30 +27,34 @@ public sealed class ProductApplicationInstaller
         new("OilCtrlCfg", "OilCtrlCfg", OperatingSystem.IsWindows() ? "OilCtrlCfg.exe" : "OilCtrlCfg")
     ];
 
-    public async Task<ApplicationInstallResult> InstallAsync(Action<string> log, CancellationToken cancellationToken = default)
+    public async Task<ApplicationInstallResult> InstallAsync(int postgresPort, bool reinstallExisting, Action<string> log, CancellationToken cancellationToken = default)
     {
-        return await Task.Run(() => InstallCore(log, cancellationToken), cancellationToken);
+        return await Task.Run(() => InstallCore(postgresPort, reinstallExisting, log, cancellationToken), cancellationToken);
     }
 
-    private static ApplicationInstallResult InstallCore(Action<string> log, CancellationToken cancellationToken)
+    public bool IsArmInstalled() => IsArmInstalled(GetInstallRoot());
+
+    public string GetArmInstallRoot() => GetInstallRoot();
+
+    private static ApplicationInstallResult InstallCore(int postgresPort, bool reinstallExisting, Action<string> log, CancellationToken cancellationToken)
     {
         var sourceRoot = ResolveProductBundleRoot();
         var targetRoot = GetInstallRoot();
 
-        log($"Папка исходной сборки приложений: {sourceRoot}");
-        log($"Папка установки приложений: {targetRoot}");
+        log(Format(AppStrings.InstallerProductSourceBundleRootLog, ("Directory", sourceRoot)));
+        log(Format(AppStrings.InstallerProductInstallRootLog, ("Directory", targetRoot)));
 
         if (OperatingSystem.IsWindows())
         {
-            RunElevatedWindowsInstall(sourceRoot, targetRoot, log, cancellationToken);
+            RunElevatedWindowsInstall(sourceRoot, targetRoot, postgresPort, reinstallExisting, log, cancellationToken);
         }
         else if (OperatingSystem.IsLinux())
         {
-            RunElevatedLinuxInstall(sourceRoot, targetRoot, log, cancellationToken);
+            RunElevatedLinuxInstall(sourceRoot, targetRoot, postgresPort, reinstallExisting, log, cancellationToken);
         }
         else
         {
-            InstallFromBundle(sourceRoot, targetRoot, log, cancellationToken);
+            InstallFromBundle(sourceRoot, targetRoot, postgresPort, reinstallExisting, log, cancellationToken);
         }
 
         var oilCtrlCfgPath = Path.Combine(targetRoot, "OilCtrlCfg", Applications.First(item => item.TargetFolderName == "OilCtrlCfg").ExecutableName);
@@ -58,11 +64,19 @@ public sealed class ProductApplicationInstaller
     public static void InstallFromBundle(
         string sourceRoot,
         string targetRoot,
+        int postgresPort,
+        bool reinstallExisting,
         Action<string> log,
         CancellationToken cancellationToken = default)
     {
+        if (reinstallExisting && Directory.Exists(targetRoot))
+        {
+            log(Format(AppStrings.InstallerProductRemovingPreviousInstallLog, ("Directory", targetRoot)));
+            Directory.Delete(targetRoot, recursive: true);
+        }
+
         Directory.CreateDirectory(targetRoot);
-        CopySharedSettings(sourceRoot, targetRoot, log);
+        CopySharedSettings(sourceRoot, targetRoot, postgresPort, log);
 
         foreach (var application in Applications)
         {
@@ -73,10 +87,14 @@ public sealed class ProductApplicationInstaller
 
             if (!Directory.Exists(sourceDirectory))
             {
-                throw new DirectoryNotFoundException($"Папка приложения не найдена: {sourceDirectory}");
+                throw new DirectoryNotFoundException(Format(AppStrings.InstallerProductApplicationFolderNotFound, ("Directory", sourceDirectory)));
             }
 
-            log($"Установка {application.TargetFolderName}: {sourceDirectory} -> {targetDirectory}");
+            log(Format(
+                AppStrings.InstallerProductInstallingApplicationLog,
+                ("Application", application.TargetFolderName),
+                ("Source", sourceDirectory),
+                ("Target", targetDirectory)));
             CopyDirectory(sourceDirectory, targetDirectory, log, cancellationToken);
             DeleteLocalApplicationSettings(targetDirectory, log);
         }
@@ -93,7 +111,7 @@ public sealed class ProductApplicationInstaller
     {
         if (!File.Exists(executablePath))
         {
-            throw new FileNotFoundException($"OilCtrlCfg не найден: {executablePath}");
+            throw new FileNotFoundException(Format(AppStrings.InstallerProductOilCtrlCfgNotFound, ("Path", executablePath)));
         }
 
         var startInfo = new ProcessStartInfo
@@ -119,7 +137,20 @@ public sealed class ProductApplicationInstaller
             return LinuxInstallRoot;
         }
 
-        throw new PlatformNotSupportedException("Установка приложений поддерживается только в Windows и Linux.");
+        throw new PlatformNotSupportedException(AppStrings.InstallerProductPlatformNotSupported);
+    }
+
+    private static bool IsArmInstalled(string targetRoot)
+    {
+        if (!Directory.Exists(targetRoot))
+        {
+            return false;
+        }
+
+        return File.Exists(Path.Combine(targetRoot, "appsettings.json"))
+            || Applications.Any(application =>
+                Directory.Exists(Path.Combine(targetRoot, application.TargetFolderName))
+                || File.Exists(Path.Combine(targetRoot, application.TargetFolderName, application.ExecutableName)));
     }
 
     private static string ResolveProductBundleRoot()
@@ -143,8 +174,7 @@ public sealed class ProductApplicationInstaller
             }
         }
 
-        throw new DirectoryNotFoundException(
-            "Не найдена папка поставочной сборки с приложениями ASNCtrl_Linux, R_Designer_L и OilCtrlCfg. Запускайте Pyramid из общей single-сборки.");
+        throw new DirectoryNotFoundException(AppStrings.InstallerProductBundleRootNotFound);
     }
 
     private static bool LooksLikeProductBundleRoot(string directory) =>
@@ -155,6 +185,8 @@ public sealed class ProductApplicationInstaller
     private static void RunElevatedWindowsInstall(
         string sourceRoot,
         string targetRoot,
+        int postgresPort,
+        bool reinstallExisting,
         Action<string> log,
         CancellationToken cancellationToken)
     {
@@ -163,9 +195,11 @@ public sealed class ProductApplicationInstaller
             "--pyramid-install-applications",
             sourceRoot,
             targetRoot,
+            postgresPort.ToString(),
+            reinstallExisting ? "true" : "false",
             logPath);
 
-        log("Копирование приложений в C:\\Prompribor. Требуются права администратора.");
+        log(AppStrings.InstallerProductWindowsCopyRequiresAdminLog);
         var startInfo = new ProcessStartInfo
         {
             FileName = fileName,
@@ -180,14 +214,14 @@ public sealed class ProductApplicationInstaller
         }
 
         using var process = Process.Start(startInfo)
-            ?? throw new InvalidOperationException("Не удалось запустить elevated helper для установки приложений.");
+            ?? throw new InvalidOperationException(AppStrings.InstallerProductElevatedHelperStartFailed);
 
         process.WaitForExit();
         cancellationToken.ThrowIfCancellationRequested();
 
         if (File.Exists(logPath))
         {
-            foreach (var line in File.ReadLines(logPath).TakeLast(120))
+            foreach (var line in File.ReadLines(logPath, Encoding.UTF8).TakeLast(120))
             {
                 log(line);
             }
@@ -197,13 +231,15 @@ public sealed class ProductApplicationInstaller
 
         if (process.ExitCode != 0)
         {
-            throw new InvalidOperationException($"Установка приложений завершилась с кодом {process.ExitCode}.");
+            throw new InvalidOperationException(Format(AppStrings.InstallerProductInstallFailedWithExitCode, ("ExitCode", process.ExitCode.ToString())));
         }
     }
 
     private static void RunElevatedLinuxInstall(
         string sourceRoot,
         string targetRoot,
+        int postgresPort,
+        bool reinstallExisting,
         Action<string> log,
         CancellationToken cancellationToken)
     {
@@ -212,16 +248,18 @@ public sealed class ProductApplicationInstaller
             "--pyramid-install-applications",
             sourceRoot,
             targetRoot,
+            postgresPort.ToString(),
+            reinstallExisting ? "true" : "false",
             logPath);
 
-        log("Копирование приложений в /opt/prompribor. Требуются права администратора.");
+        log(AppStrings.InstallerProductLinuxCopyRequiresAdminLog);
 
         var exitCode = TryRunLinuxPrivilegeHelper(fileName, arguments, log, cancellationToken);
         cancellationToken.ThrowIfCancellationRequested();
 
         if (File.Exists(logPath))
         {
-            foreach (var line in File.ReadLines(logPath).TakeLast(120))
+            foreach (var line in File.ReadLines(logPath, Encoding.UTF8).TakeLast(120))
             {
                 log(line);
             }
@@ -231,7 +269,7 @@ public sealed class ProductApplicationInstaller
 
         if (exitCode != 0)
         {
-            throw new InvalidOperationException($"Установка приложений завершилась с кодом {exitCode}.");
+            throw new InvalidOperationException(Format(AppStrings.InstallerProductInstallFailedWithExitCode, ("ExitCode", exitCode.ToString())));
         }
     }
 
@@ -280,6 +318,12 @@ public sealed class ProductApplicationInstaller
 
     private static (string FileName, string[] Arguments) GetCurrentApplicationCommandLine(params string[] maintenanceArguments)
     {
+        var localizedMaintenanceArguments = new[]
+        {
+            "--pyramid-language",
+            LocalizationManager.CurrentLanguage.ToString()
+        }.Concat(maintenanceArguments).ToArray();
+
         var entryAssemblyPath = Environment.ProcessPath;
         var dllPath = Path.Combine(AppContext.BaseDirectory, "Pyramid.dll");
 
@@ -287,15 +331,15 @@ public sealed class ProductApplicationInstaller
             string.Equals(Path.GetFileNameWithoutExtension(entryAssemblyPath), "dotnet", StringComparison.OrdinalIgnoreCase) &&
             File.Exists(dllPath))
         {
-            return (entryAssemblyPath, new[] { dllPath }.Concat(maintenanceArguments).ToArray());
+            return (entryAssemblyPath, new[] { dllPath }.Concat(localizedMaintenanceArguments).ToArray());
         }
 
         if (!string.IsNullOrWhiteSpace(entryAssemblyPath))
         {
-            return (entryAssemblyPath, maintenanceArguments);
+            return (entryAssemblyPath, localizedMaintenanceArguments);
         }
 
-        throw new InvalidOperationException("Путь текущего приложения не найден.");
+        throw new InvalidOperationException(AppStrings.InstallerProductCurrentExecutableNotFound);
     }
 
     private static ProcessStartInfo CreateStartInfo(string fileName, IReadOnlyList<string> arguments)
@@ -333,22 +377,22 @@ public sealed class ProductApplicationInstaller
         }
     }
 
-    private static void CopySharedSettings(string sourceRoot, string targetRoot, Action<string> log)
+    private static void CopySharedSettings(string sourceRoot, string targetRoot, int postgresPort, Action<string> log)
     {
         var sourceSettingsPath = Path.Combine(sourceRoot, "appsettings.json");
         if (!File.Exists(sourceSettingsPath))
         {
-            log("Общий appsettings.json в поставочной сборке не найден. Pyramid создаст/обновит его после настройки PostgreSQL.");
+            log(AppStrings.InstallerProductSharedSettingsMissingLog);
             return;
         }
 
         var targetSettingsPath = Path.Combine(targetRoot, "appsettings.json");
         File.Copy(sourceSettingsPath, targetSettingsPath, overwrite: true);
-        NormalizeSharedSettings(targetSettingsPath);
-        log($"Общий appsettings.json скопирован: {targetSettingsPath}");
+        NormalizeSharedSettings(targetSettingsPath, postgresPort);
+        log(Format(AppStrings.InstallerProductSharedSettingsCopiedLog, ("Path", targetSettingsPath)));
     }
 
-    private static void NormalizeSharedSettings(string settingsPath)
+    private static void NormalizeSharedSettings(string settingsPath, int postgresPort)
     {
         JsonObject root;
         if (File.Exists(settingsPath))
@@ -372,11 +416,15 @@ public sealed class ProductApplicationInstaller
         database["Password"] = string.Empty;
         database["CredentialID"] = PostgresCredentialId;
         database["DBName"] = database["DBName"]?.GetValue<string>() is { Length: > 0 } dbName ? dbName : "OilCtrl";
-        database["Port"] = database["Port"]?.GetValue<string>() is { Length: > 0 } port ? port : NativePostgresInstaller.PreferredServerPort.ToString();
+        database["Port"] = postgresPort.ToString();
 
         File.WriteAllText(
             settingsPath,
-            root.ToJsonString(new JsonSerializerOptions { WriteIndented = true }),
+            root.ToJsonString(new JsonSerializerOptions
+            {
+                WriteIndented = true,
+                Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping
+            }),
             new UTF8Encoding(false));
     }
 
@@ -389,7 +437,7 @@ public sealed class ProductApplicationInstaller
         }
 
         File.Delete(localSettingsPath);
-        log($"Локальный appsettings.json удален из папки приложения: {localSettingsPath}");
+        log(Format(AppStrings.InstallerProductLocalSettingsDeletedLog, ("Path", localSettingsPath)));
     }
 
     private static void EnsureExecutablePermission(string targetDirectory, string executableName, Action<string> log)
@@ -410,7 +458,7 @@ public sealed class ProductApplicationInstaller
 
         if (process?.ExitCode == 0)
         {
-            log($"Для исполняемого файла выставлены права запуска: {executablePath}");
+            log(Format(AppStrings.InstallerProductExecutablePermissionSetLog, ("Path", executablePath)));
         }
     }
 
@@ -443,7 +491,7 @@ public sealed class ProductApplicationInstaller
             File.SetUnixFileMode(file, fileMode);
         }
 
-        log($"Для папки установки выставлены права чтения: {targetRoot}");
+        log(Format(AppStrings.InstallerProductInstallTreePermissionsSetLog, ("Directory", targetRoot)));
     }
 
     private static void CopyDirectory(
@@ -473,11 +521,27 @@ public sealed class ProductApplicationInstaller
             copiedFiles++;
             if (copiedFiles % 100 == 0)
             {
-                log($"Скопировано файлов для {Path.GetFileName(targetDirectory)}: {copiedFiles}...");
+                log(Format(
+                    AppStrings.InstallerProductCopiedFilesProgressLog,
+                    ("Application", Path.GetFileName(targetDirectory)),
+                    ("Count", copiedFiles.ToString())));
             }
         }
 
-        log($"Установка {Path.GetFileName(targetDirectory)} завершена. Скопировано файлов: {copiedFiles}.");
+        log(Format(
+            AppStrings.InstallerProductInstallCompletedLog,
+            ("Application", Path.GetFileName(targetDirectory)),
+            ("Count", copiedFiles.ToString())));
+    }
+
+    private static string Format(string template, params (string Name, string Value)[] values)
+    {
+        foreach (var (name, value) in values)
+        {
+            template = template.Replace("{" + name + "}", value, StringComparison.Ordinal);
+        }
+
+        return template;
     }
 
     private sealed record ApplicationInstallItem(string SourceFolderName, string TargetFolderName, string ExecutableName);

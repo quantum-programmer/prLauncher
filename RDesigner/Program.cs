@@ -4,7 +4,10 @@ using Microsoft.Extensions.Hosting;
 using Serilog;
 using Serilog.Events;
 using System;
+using System.Globalization;
 using System.IO;
+using System.Linq;
+using System.Text;
 using Pyramid.Resources;
 using Pyramid.Security;
 using Pyramid.Services;
@@ -93,6 +96,8 @@ namespace Pyramid
         private static bool TryRunMaintenanceCommand(string[] args, out int exitCode)
         {
             exitCode = 0;
+            args = ApplyMaintenanceLanguage(args);
+
             if (args.Length == 3 &&
                 string.Equals(args[0], "--pyramid-save-database-credential", StringComparison.Ordinal))
             {
@@ -111,20 +116,22 @@ namespace Pyramid
                 }
             }
 
-            if (args.Length == 4 &&
-                string.Equals(args[0], "--pyramid-install-applications", StringComparison.Ordinal))
+            if (args.Length == 5 &&
+                string.Equals(args[0], "--pyramid-install-postgres-binaries", StringComparison.Ordinal))
             {
                 try
                 {
-                    var sourceRoot = args[1];
-                    var targetRoot = args[2];
-                    var logPath = args[3];
+                    var archivePath = args[1];
+                    var installDir = args[2];
+                    var port = int.Parse(args[3], CultureInfo.InvariantCulture);
+                    var logPath = args[4];
                     Directory.CreateDirectory(Path.GetDirectoryName(logPath)!);
 
-                    using var writer = new StreamWriter(logPath, append: false);
-                    ProductApplicationInstaller.InstallFromBundle(
-                        sourceRoot,
-                        targetRoot,
+                    using var writer = new StreamWriter(logPath, append: false, Encoding.UTF8);
+                    NativePostgresInstaller.InstallWindowsBinariesFromMaintenance(
+                        archivePath,
+                        installDir,
+                        port,
                         message =>
                         {
                             writer.WriteLine(message);
@@ -136,7 +143,48 @@ namespace Pyramid
                 {
                     try
                     {
-                        File.AppendAllText(args[3], ex.Message + Environment.NewLine);
+                        File.AppendAllText(args[4], ex.Message + Environment.NewLine, Encoding.UTF8);
+                    }
+                    catch
+                    {
+                        // Nothing else can be reported from the maintenance process.
+                    }
+
+                    exitCode = 1;
+                    return true;
+                }
+            }
+
+            if (args.Length == 6 &&
+                string.Equals(args[0], "--pyramid-install-applications", StringComparison.Ordinal))
+            {
+                try
+                {
+                    var sourceRoot = args[1];
+                    var targetRoot = args[2];
+                    var postgresPort = int.Parse(args[3], CultureInfo.InvariantCulture);
+                    var reinstallExisting = bool.Parse(args[4]);
+                    var logPath = args[5];
+                    Directory.CreateDirectory(Path.GetDirectoryName(logPath)!);
+
+                    using var writer = new StreamWriter(logPath, append: false, Encoding.UTF8);
+                    ProductApplicationInstaller.InstallFromBundle(
+                        sourceRoot,
+                        targetRoot,
+                        postgresPort,
+                        reinstallExisting,
+                        message =>
+                        {
+                            writer.WriteLine(message);
+                            writer.Flush();
+                        });
+                    return true;
+                }
+                catch (Exception ex)
+                {
+                    try
+                    {
+                        File.AppendAllText(args[5], ex.Message + Environment.NewLine, Encoding.UTF8);
                     }
                     catch
                     {
@@ -149,6 +197,23 @@ namespace Pyramid
             }
 
             return false;
+        }
+
+        private static string[] ApplyMaintenanceLanguage(string[] args)
+        {
+            if (args.Length < 2 ||
+                !string.Equals(args[0], "--pyramid-language", StringComparison.Ordinal))
+            {
+                return args;
+            }
+
+            if (Enum.TryParse<AppLanguage>(args[1], ignoreCase: true, out var language) &&
+                Enum.IsDefined(language))
+            {
+                LocalizationManager.UseLanguage(language);
+            }
+
+            return args.Skip(2).ToArray();
         }
     }
 }

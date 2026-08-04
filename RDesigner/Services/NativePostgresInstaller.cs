@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Globalization;
 using System.IO;
 using System.IO.Compression;
 using System.Linq;
@@ -8,7 +9,9 @@ using System.Net;
 using System.Net.NetworkInformation;
 using System.Net.Sockets;
 using System.Runtime.InteropServices;
+using System.Security.Principal;
 using System.Text;
+using System.Text.Encodings.Web;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
@@ -39,7 +42,7 @@ public sealed class NativePostgresInstaller
 
     private readonly string initSqlPath = Path.Combine(AppContext.BaseDirectory, "Installers", "oilctrl-init.sql");
 
-    public async Task InstallAsync(
+    public async Task<int> InstallAsync(
         string? windowsInstallDirectory,
         Action<string> log,
         CancellationToken cancellationToken = default)
@@ -49,14 +52,12 @@ public sealed class NativePostgresInstaller
 
         if (OperatingSystem.IsWindows())
         {
-            await InstallOnWindowsAsync(windowsInstallDirectory, log, cancellationToken);
-            return;
+            return await InstallOnWindowsAsync(windowsInstallDirectory, log, cancellationToken);
         }
 
         if (OperatingSystem.IsLinux())
         {
-            await InstallOnLinuxAsync(log, cancellationToken);
-            return;
+            return await InstallOnLinuxAsync(log, cancellationToken);
         }
 
         throw new PlatformNotSupportedException(AppStrings.InstallerPlatformNotSupported);
@@ -129,12 +130,13 @@ public sealed class NativePostgresInstaller
             new Dictionary<string, string> { ["PGPASSWORD"] = SuperPassword });
     }
 
-    private async Task InstallOnWindowsAsync(
+    private async Task<int> InstallOnWindowsAsync(
         string? windowsInstallDirectory,
         Action<string> log,
         CancellationToken cancellationToken)
     {
         var installDir = NormalizeWindowsInstallDirectory(windowsInstallDirectory);
+        EnsureWindowsInstallDirectoryDoesNotContainPostgres(installDir);
         var psqlPath = await FindPsqlAsync(installDir, cancellationToken);
 
         if (psqlPath is null)
@@ -155,7 +157,7 @@ public sealed class NativePostgresInstaller
 
             if (Directory.Exists(installDir) && Directory.EnumerateFileSystemEntries(installDir).Any())
             {
-                throw new InvalidOperationException(
+                throw new InstallerSystemCancelledException(
                     Format(AppStrings.InstallerDirectoryNotEmpty, ("Directory", installDir)));
             }
 
@@ -165,21 +167,17 @@ public sealed class NativePostgresInstaller
             log(Format(AppStrings.InstallerWindowsServiceLog, ("ServiceName", serviceName)));
             log(AppStrings.InstallerComponentsSkippedLog);
 
-            ExtractWindowsBinaries(binariesArchive, installDir, log);
-
             var binDir = Path.Combine(installDir, "bin");
             psqlPath = Path.Combine(binDir, "psql.exe");
             var initDbPath = Path.Combine(binDir, "initdb.exe");
             var pgCtlPath = Path.Combine(binDir, "pg_ctl.exe");
 
+            await RunElevatedWindowsBinariesInstallAsync(binariesArchive, installDir, port, log, cancellationToken);
+
             if (!File.Exists(psqlPath) || !File.Exists(initDbPath) || !File.Exists(pgCtlPath))
             {
                 throw new FileNotFoundException(AppStrings.InstallerRequiredExecutablesNotFound);
             }
-
-            await InitializeWindowsDataDirectoryAsync(initDbPath, dataDir, log, cancellationToken);
-            ConfigureWindowsPostgresDataDirectory(dataDir, port, log);
-            await RegisterAndStartWindowsServiceAsync(pgCtlPath, serviceName, installDir, dataDir, log, cancellationToken);
         }
         else
         {
@@ -206,9 +204,10 @@ public sealed class NativePostgresInstaller
 
         var installedPort = await ResolveWindowsPortAsync(installDir, log, cancellationToken);
         await InitializeDatabaseAsync(psqlPath, installedPort, log, cancellationToken);
+        return installedPort;
     }
 
-    private async Task InstallOnLinuxAsync(Action<string> log, CancellationToken cancellationToken)
+    private async Task<int> InstallOnLinuxAsync(Action<string> log, CancellationToken cancellationToken)
     {
         await EnsureAstraOrDebianLinuxAsync(log, cancellationToken);
         await RunLinuxSetupScriptsAsync(log, cancellationToken);
@@ -236,6 +235,23 @@ public sealed class NativePostgresInstaller
 
         await EnsureLinuxPostgresPasswordAsync(port, log, cancellationToken);
         await InitializeDatabaseAsync(psqlPath, port, log, cancellationToken);
+        return port;
+    }
+
+    private static void EnsureWindowsInstallDirectoryDoesNotContainPostgres(string installDir)
+    {
+        if (!OperatingSystem.IsWindows() || !Directory.Exists(installDir))
+        {
+            return;
+        }
+
+        var psqlPath = Path.Combine(installDir, "bin", "psql.exe");
+        var dataDir = Path.Combine(installDir, "data");
+        if (File.Exists(psqlPath) || Directory.Exists(dataDir) && Directory.EnumerateFileSystemEntries(dataDir).Any())
+        {
+            throw new InstallerSystemCancelledException(
+                Format(AppStrings.InstallerPostgresAlreadyExistsInDirectory, ("Directory", installDir)));
+        }
     }
 
     private async Task InitializeDatabaseAsync(string psqlPath, int port, Action<string> log, CancellationToken cancellationToken)
@@ -356,6 +372,12 @@ public sealed class NativePostgresInstaller
 
     private static (string FileName, IReadOnlyList<string> Arguments) GetCurrentApplicationCommandLine(params string[] maintenanceArguments)
     {
+        var localizedMaintenanceArguments = new[]
+        {
+            "--pyramid-language",
+            LocalizationManager.CurrentLanguage.ToString()
+        }.Concat(maintenanceArguments).ToArray();
+
         if (OperatingSystem.IsWindows() || OperatingSystem.IsLinux())
         {
             var entryAssemblyPath = Environment.ProcessPath;
@@ -366,12 +388,12 @@ public sealed class NativePostgresInstaller
                 string.Equals(Path.GetFileNameWithoutExtension(entryAssemblyPath), "dotnet", StringComparison.OrdinalIgnoreCase) &&
                 File.Exists(dllPath))
             {
-                return (entryAssemblyPath, new[] { dllPath }.Concat(maintenanceArguments).ToArray());
+                return (entryAssemblyPath, new[] { dllPath }.Concat(localizedMaintenanceArguments).ToArray());
             }
 
             if (!string.IsNullOrWhiteSpace(entryAssemblyPath))
             {
-                return (entryAssemblyPath, maintenanceArguments);
+                return (entryAssemblyPath, localizedMaintenanceArguments);
             }
         }
 
@@ -529,6 +551,84 @@ public sealed class NativePostgresInstaller
         log(Format(AppStrings.InstallerExtractionCompletedLog, ("Count", extracted.ToString())));
     }
 
+    public static void InstallWindowsBinariesFromMaintenance(
+        string archivePath,
+        string installDir,
+        int port,
+        Action<string> log)
+    {
+        var dataDir = Path.Combine(installDir, "data");
+        var serviceName = $"postgresql-x64-16-oilctrl-{port}";
+
+        if (Directory.Exists(installDir) && Directory.EnumerateFileSystemEntries(installDir).Any())
+        {
+            throw new InvalidOperationException(
+                Format(AppStrings.InstallerDirectoryNotEmpty, ("Directory", installDir)));
+        }
+
+        ExtractWindowsBinaries(archivePath, installDir, log);
+
+        var binDir = Path.Combine(installDir, "bin");
+        var psqlPath = Path.Combine(binDir, "psql.exe");
+        var initDbPath = Path.Combine(binDir, "initdb.exe");
+        var pgCtlPath = Path.Combine(binDir, "pg_ctl.exe");
+
+        if (!File.Exists(psqlPath) || !File.Exists(initDbPath) || !File.Exists(pgCtlPath))
+        {
+            throw new FileNotFoundException(AppStrings.InstallerRequiredExecutablesNotFound);
+        }
+
+        PrepareWindowsDataDirectoryAcl(dataDir, log);
+        InitializeWindowsDataDirectoryAsync(initDbPath, dataDir, log, CancellationToken.None)
+            .GetAwaiter()
+            .GetResult();
+        ConfigureWindowsPostgresDataDirectory(dataDir, port, log);
+        RegisterAndStartWindowsServiceAsync(pgCtlPath, serviceName, installDir, dataDir, log, CancellationToken.None, runAsAdmin: false)
+            .GetAwaiter()
+            .GetResult();
+    }
+
+    private static async Task RunElevatedWindowsBinariesInstallAsync(
+        string archivePath,
+        string installDir,
+        int port,
+        Action<string> log,
+        CancellationToken cancellationToken)
+    {
+        log(AppStrings.InstallerWindowsBinariesInstallRequiresAdminLog);
+        var logPath = Path.Combine(Path.GetTempPath(), $"pyramid-postgres-binaries-install-{Guid.NewGuid():N}.log");
+        var (fileName, arguments) = GetCurrentApplicationCommandLine(
+            "--pyramid-install-postgres-binaries",
+            archivePath,
+            installDir,
+            port.ToString(),
+            logPath);
+
+        var result = await RunProcessAsync(
+            fileName,
+            arguments.ToArray(),
+            log,
+            cancellationToken,
+            runAsAdmin: true,
+            throwOnError: false);
+
+        if (File.Exists(logPath))
+        {
+            foreach (var line in File.ReadLines(logPath, Encoding.UTF8).TakeLast(160))
+            {
+                log(line);
+            }
+        }
+
+        TryDeleteFile(logPath);
+
+        if (result.ExitCode != 0)
+        {
+            throw new InvalidOperationException(
+                Format(AppStrings.InstallerWindowsBinariesInstallFailed, ("ExitCode", result.ExitCode.ToString())));
+        }
+    }
+
     private static bool ShouldSkipWindowsBinaryEntry(string relativePath)
     {
         var normalized = relativePath.Replace('\\', '/');
@@ -537,6 +637,60 @@ public sealed class NativePostgresInstaller
                normalized.Equals("bin/stackbuilder.exe", StringComparison.OrdinalIgnoreCase) ||
                normalized.Contains("StackBuilder", StringComparison.OrdinalIgnoreCase) ||
                normalized.Contains("pgAdmin", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static void PrepareWindowsDataDirectoryAcl(string dataDir, Action<string> log)
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        Directory.CreateDirectory(dataDir);
+        var currentUserSid = WindowsIdentity.GetCurrent().User?.Value;
+        if (string.IsNullOrWhiteSpace(currentUserSid))
+        {
+            throw new InvalidOperationException(AppStrings.InstallerCurrentWindowsUserSidNotFound);
+        }
+
+        log(Format(AppStrings.InstallerPreparingWindowsDataDirectoryAclLog, ("Directory", dataDir)));
+
+        RunIcaclsOrThrow(log, dataDir, "/inheritance:r");
+        RunIcaclsOrThrow(
+            log,
+            dataDir,
+            "/grant:r",
+            $"*{currentUserSid}:(OI)(CI)F",
+            "*S-1-5-18:(OI)(CI)F",
+            "*S-1-5-32-544:(OI)(CI)F");
+    }
+
+    private static void RunIcaclsOrThrow(Action<string> log, string targetPath, params string[] arguments)
+    {
+        var allArguments = new[] { targetPath }.Concat(arguments).ToArray();
+        var processLogPrefix = GetProcessLogPrefix("icacls.exe");
+        var result = RunProcessAsync(
+                "icacls.exe",
+                allArguments,
+                message =>
+                {
+                    if (message.StartsWith($"{processLogPrefix} >", StringComparison.Ordinal))
+                    {
+                        log(message);
+                    }
+                },
+                CancellationToken.None,
+                throwOnError: false)
+            .GetAwaiter()
+            .GetResult();
+
+        if (result.ExitCode != 0)
+        {
+            throw new InvalidOperationException(Format(
+                AppStrings.InstallerWindowsDataDirectoryAclFailed,
+                ("Directory", targetPath),
+                ("ExitCode", result.ExitCode.ToString())));
+        }
     }
 
     private static async Task InitializeWindowsDataDirectoryAsync(
@@ -562,7 +716,8 @@ public sealed class NativePostgresInstaller
                 initDbPath,
                 new[] { "-D", dataDir, "-U", SuperUser, "--pwfile", passwordFile, "-A", "scram-sha-256", "-E", "UTF8" },
                 log,
-                cancellationToken);
+                cancellationToken,
+                outputEncoding: GetWindowsAnsiEncoding());
         }
         finally
         {
@@ -604,7 +759,8 @@ public sealed class NativePostgresInstaller
         string installDir,
         string dataDir,
         Action<string> log,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        bool runAsAdmin = true)
     {
         log(AppStrings.InstallerRegisterServiceLog);
         var elevatedLogPath = Path.Combine(AppContext.BaseDirectory, "logs", "postgresql-service-install.log");
@@ -641,13 +797,13 @@ public sealed class NativePostgresInstaller
                 new[] { "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", scriptPath },
                 log,
                 cancellationToken,
-                runAsAdmin: true,
+                runAsAdmin: runAsAdmin,
                 throwOnError: false);
 
             if (File.Exists(elevatedLogPath))
             {
                 log(Format(AppStrings.InstallerServiceInstallationLog, ("Path", elevatedLogPath)));
-                foreach (var line in File.ReadLines(elevatedLogPath).TakeLast(80))
+                foreach (var line in File.ReadLines(elevatedLogPath, Encoding.UTF8).TakeLast(80))
                 {
                     log($"{GetProcessLogPrefix("powershell.exe")} {line}");
                 }
@@ -923,7 +1079,7 @@ public sealed class NativePostgresInstaller
 
             if (File.Exists(elevatedLogPath))
             {
-                foreach (var line in File.ReadLines(elevatedLogPath).TakeLast(40))
+                foreach (var line in File.ReadLines(elevatedLogPath, Encoding.UTF8).TakeLast(40))
                 {
                     log($"{GetProcessLogPrefix("powershell.exe")} {line}");
                 }
@@ -1677,7 +1833,11 @@ public sealed class NativePostgresInstaller
 
         File.WriteAllText(
             sharedSettingsPath,
-            root.ToJsonString(new JsonSerializerOptions { WriteIndented = true }),
+            root.ToJsonString(new JsonSerializerOptions
+            {
+                WriteIndented = true,
+                Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping
+            }),
             Utf8NoBom);
     }
 
@@ -1696,7 +1856,8 @@ public sealed class NativePostgresInstaller
         CancellationToken cancellationToken,
         IReadOnlyDictionary<string, string>? environment = null,
         bool runAsAdmin = false,
-        bool throwOnError = true)
+        bool throwOnError = true,
+        Encoding? outputEncoding = null)
     {
         var startInfo = new ProcessStartInfo
         {
@@ -1707,6 +1868,12 @@ public sealed class NativePostgresInstaller
             RedirectStandardError = !runAsAdmin,
             CreateNoWindow = !runAsAdmin
         };
+
+        if (!runAsAdmin && outputEncoding is not null)
+        {
+            startInfo.StandardOutputEncoding = outputEncoding;
+            startInfo.StandardErrorEncoding = outputEncoding;
+        }
 
         foreach (var argument in arguments)
         {
@@ -1808,6 +1975,24 @@ public sealed class NativePostgresInstaller
     private static string MaskSensitiveArgument(string argument)
     {
         return argument == SuperPassword ? "********" : argument;
+    }
+
+    private static Encoding GetWindowsAnsiEncoding()
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            return Encoding.UTF8;
+        }
+
+        try
+        {
+            Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
+            return Encoding.GetEncoding(CultureInfo.CurrentCulture.TextInfo.ANSICodePage);
+        }
+        catch (ArgumentException)
+        {
+            return Encoding.Default;
+        }
     }
 
     private static string EscapePowerShellSingleQuotedString(string value)
