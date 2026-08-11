@@ -282,8 +282,8 @@ public sealed class ProductApplicationInstaller
         var command = string.Join(" ", new[] { fileName }.Concat(arguments).Select(ShellQuote));
         var helpers = new[]
         {
-            new LinuxPrivilegeHelper("fly-su", ["-d", "-c", command]),
-            new LinuxPrivilegeHelper("pkexec", new[] { fileName }.Concat(arguments).ToArray())
+            new LinuxPrivilegeHelper("pkexec", new[] { fileName }.Concat(arguments).ToArray()),
+            new LinuxPrivilegeHelper("fly-su", ["-d", "-p", "100", "-c", command])
         };
 
         foreach (var helper in helpers)
@@ -418,7 +418,7 @@ public sealed class ProductApplicationInstaller
         database["DBName"] = database["DBName"]?.GetValue<string>() is { Length: > 0 } dbName ? dbName : "OilCtrl";
         database["Port"] = postgresPort.ToString();
 
-        File.WriteAllText(
+        ConfigurationFileSafety.WriteAllTextAtomic(
             settingsPath,
             root.ToJsonString(new JsonSerializerOptions
             {

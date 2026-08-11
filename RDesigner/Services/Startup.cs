@@ -9,6 +9,7 @@ public class Startup
     public void ConfigureServices(IServiceCollection services, IConfiguration configuration)
     {
         services.AddSingleton<NativePostgresInstaller>();
+        services.AddSingleton<LinuxWineInstaller>();
         services.AddSingleton<ProductApplicationInstaller>();
 
         services.AddTransient<InstallerViewModel>();

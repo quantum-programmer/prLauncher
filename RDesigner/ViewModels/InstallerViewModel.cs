@@ -19,6 +19,7 @@ namespace Pyramid.ViewModels;
 public partial class InstallerViewModel : ViewModelBase
 {
     private readonly NativePostgresInstaller installer;
+    private readonly LinuxWineInstaller wineInstaller;
     private readonly ProductApplicationInstaller applicationInstaller;
     private readonly object logLock = new();
     private readonly StringBuilder logBuilder = new();
@@ -64,9 +65,13 @@ public partial class InstallerViewModel : ViewModelBase
 
     public bool IsLinux => OperatingSystem.IsLinux();
 
-    public InstallerViewModel(NativePostgresInstaller installer, ProductApplicationInstaller applicationInstaller)
+    public InstallerViewModel(
+        NativePostgresInstaller installer,
+        LinuxWineInstaller wineInstaller,
+        ProductApplicationInstaller applicationInstaller)
     {
         this.installer = installer;
+        this.wineInstaller = wineInstaller;
         this.applicationInstaller = applicationInstaller;
         LocalizationManager.LanguageChanged += OnLanguageChanged;
         SetStatus(() => AppStrings.InstallerReadyStatus);
@@ -121,6 +126,7 @@ public partial class InstallerViewModel : ViewModelBase
             async log =>
             {
                 var postgresPort = await installer.InstallAsync(WindowsInstallDirectory, log);
+                await wineInstaller.InstallAsync(log, ConfirmReinstallWineAsync);
                 installResult = await applicationInstaller.InstallAsync(postgresPort, reinstallExisting, log);
                 installCompleted = true;
             });
@@ -266,6 +272,17 @@ public partial class InstallerViewModel : ViewModelBase
                 .Replace("{NewLine}", Environment.NewLine, StringComparison.Ordinal),
             AppStrings.InstallerArmReinstallButton,
             AppStrings.InstallerCancelButton);
+    }
+
+    private static async Task<bool> ConfirmReinstallWineAsync(string installedVersion)
+    {
+        return await ShowConfirmationDialogAsync(
+            "Pyramid",
+            AppStrings.InstallerWineReinstallQuestion
+                .Replace("{Version}", installedVersion, StringComparison.Ordinal)
+                .Replace("{NewLine}", Environment.NewLine, StringComparison.Ordinal),
+            AppStrings.InstallerYesButton,
+            AppStrings.InstallerNoButton);
     }
 
     private static async Task<bool> ShowConfirmationDialogAsync(string title, string message, string yesText, string noText)

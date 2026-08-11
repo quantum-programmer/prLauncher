@@ -1685,14 +1685,14 @@ public sealed class NativePostgresInstaller
         var runners = new List<LinuxPrivilegedRunner>();
         var scriptCommand = $"sh {ShellQuote(scriptPath)}";
 
-        if (await CommandExistsAsync("fly-su", cancellationToken))
-        {
-            runners.Add(new LinuxPrivilegedRunner("fly-su", new[] { "-d", "-c", scriptCommand }));
-        }
-
         if (await CommandExistsAsync("pkexec", cancellationToken))
         {
             runners.Add(new LinuxPrivilegedRunner("pkexec", new[] { "sh", scriptPath }));
+        }
+
+        if (await CommandExistsAsync("fly-su", cancellationToken))
+        {
+            runners.Add(new LinuxPrivilegedRunner("fly-su", new[] { "-d", "-p", "100", "-c", scriptCommand }));
         }
 
         if (await CommandExistsAsync("sudo", cancellationToken))
@@ -1831,7 +1831,7 @@ public sealed class NativePostgresInstaller
         database["DBName"] = DatabaseName;
         database["Port"] = port.ToString();
 
-        File.WriteAllText(
+        ConfigurationFileSafety.WriteAllTextAtomic(
             sharedSettingsPath,
             root.ToJsonString(new JsonSerializerOptions
             {
@@ -1920,6 +1920,10 @@ public sealed class NativePostgresInstaller
         }
 
         await process.WaitForExitAsync(cancellationToken);
+        if (!runAsAdmin)
+        {
+            process.WaitForExit();
+        }
 
         var result = new ProcessResult(process.ExitCode, output.ToString(), errors.ToString());
         if (throwOnError && result.ExitCode != 0)

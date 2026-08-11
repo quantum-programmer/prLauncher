@@ -38,7 +38,12 @@
 
   <ItemGroup>
     <None Include="..\appsettings.json" Link="appsettings.json" CopyToOutputDirectory="PreserveNewest" />
-    <None Include="Installers\**" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="Installers\**"
+          Exclude="Installers\packages\wine\**"
+          CopyToOutputDirectory="PreserveNewest" />
+    <None Include="Installers\packages\wine\**"
+          Condition="'$(RuntimeIdentifier)' != 'win-x64'"
+          CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
   <PropertyGroup Condition="'$(Configuration)' == 'self-contained debug'">
@@ -153,9 +158,15 @@
     <Delete Files="$(SelfContainedSingleRoot)\linux-x64\$(SelfContainedSingleFolderName)\R_Designer_L\appsettings.json" />
 
     <Copy SourceFiles="$(MSBuildProjectDirectory)\..\appsettings.json"
-          DestinationFiles="$(SelfContainedSingleRoot)\win-x64\$(SelfContainedSingleFolderName)\appsettings.json" />
+          DestinationFiles="$(SelfContainedSingleRoot)\win-x64\$(SelfContainedSingleFolderName)\.appsettings.json.tmp" />
+    <Move SourceFiles="$(SelfContainedSingleRoot)\win-x64\$(SelfContainedSingleFolderName)\.appsettings.json.tmp"
+          DestinationFiles="$(SelfContainedSingleRoot)\win-x64\$(SelfContainedSingleFolderName)\appsettings.json"
+          OverwriteReadOnlyFiles="true" />
     <Copy SourceFiles="$(MSBuildProjectDirectory)\..\appsettings.json"
-          DestinationFiles="$(SelfContainedSingleRoot)\linux-x64\$(SelfContainedSingleFolderName)\appsettings.json" />
+          DestinationFiles="$(SelfContainedSingleRoot)\linux-x64\$(SelfContainedSingleFolderName)\.appsettings.json.tmp" />
+    <Move SourceFiles="$(SelfContainedSingleRoot)\linux-x64\$(SelfContainedSingleFolderName)\.appsettings.json.tmp"
+          DestinationFiles="$(SelfContainedSingleRoot)\linux-x64\$(SelfContainedSingleFolderName)\appsettings.json"
+          OverwriteReadOnlyFiles="true" />
 
     <Delete Files="$(SelfContainedSingleRoot)\win-x64\$(SelfContainedSingleFolderName)\Pyramid\appsettings.json" />
     <Delete Files="$(SelfContainedSingleRoot)\win-x64\$(SelfContainedSingleFolderName)\OilCtrlCfg\appsettings.json" />

@@ -47,6 +47,8 @@ namespace Pyramid
                 LocalizationManager.InitializeResources();
                 Log.Information(AppStrings.ApplicationStarted);
 
+                RepairConfigurationFiles();
+
                 App.Host = CreateHostBuilder(args).Build();
                 App.Host.Start();
                 BuildAvaloniaApp().StartWithClassicDesktopLifetime(args);
@@ -60,6 +62,24 @@ namespace Pyramid
                 App.Host?.StopAsync().GetAwaiter().GetResult();
                 App.Host?.Dispose();
                 Log.CloseAndFlush();
+            }
+        }
+
+        private static void RepairConfigurationFiles()
+        {
+            var appBase = AppContext.BaseDirectory;
+            var paths = new[]
+            {
+                Path.Combine(appBase, "appsettings.json"),
+                Path.GetFullPath(Path.Combine(appBase, "..", "appsettings.json"))
+            };
+
+            foreach (var path in paths.Distinct(StringComparer.OrdinalIgnoreCase))
+            {
+                if (ConfigurationFileSafety.RepairTrailingNullBytes(path))
+                {
+                    Log.Warning(AppStrings.ConfigurationTrailingNullBytesRepaired, path);
+                }
             }
         }
 
@@ -144,6 +164,47 @@ namespace Pyramid
                     try
                     {
                         File.AppendAllText(args[4], ex.Message + Environment.NewLine, Encoding.UTF8);
+                    }
+                    catch
+                    {
+                        // Nothing else can be reported from the maintenance process.
+                    }
+
+                    exitCode = 1;
+                    return true;
+                }
+            }
+
+            if (args.Length == 3 &&
+                (string.Equals(args[0], "--pyramid-install-wine", StringComparison.Ordinal) ||
+                 string.Equals(args[0], "--pyramid-reinstall-wine", StringComparison.Ordinal)))
+            {
+                try
+                {
+                    var reinstallExisting = string.Equals(
+                        args[0],
+                        "--pyramid-reinstall-wine",
+                        StringComparison.Ordinal);
+                    var packagesDirectory = args[1];
+                    var logPath = args[2];
+                    Directory.CreateDirectory(Path.GetDirectoryName(logPath)!);
+
+                    using var writer = new StreamWriter(logPath, append: false, Encoding.UTF8);
+                    LinuxWineInstaller.InstallFromPackages(
+                        packagesDirectory,
+                        reinstallExisting,
+                        message =>
+                        {
+                            writer.WriteLine(message);
+                            writer.Flush();
+                        });
+                    return true;
+                }
+                catch (Exception ex)
+                {
+                    try
+                    {
+                        File.AppendAllText(args[2], ex.Message + Environment.NewLine, Encoding.UTF8);
                     }
                     catch
                     {
