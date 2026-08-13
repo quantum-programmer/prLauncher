@@ -175,6 +175,43 @@ namespace Pyramid
                 }
             }
 
+            if (args.Length == 4 &&
+                string.Equals(args[0], "--pyramid-reinstall-postgres", StringComparison.Ordinal))
+            {
+                try
+                {
+                    var installDir = args[1];
+                    var backupDir = args[2];
+                    var logPath = args[3];
+                    Directory.CreateDirectory(Path.GetDirectoryName(logPath)!);
+
+                    using var writer = new StreamWriter(logPath, append: false, Encoding.UTF8);
+                    NativePostgresInstaller.BackupAndRemoveWindowsPostgresFromMaintenance(
+                        installDir,
+                        backupDir,
+                        message =>
+                        {
+                            writer.WriteLine(message);
+                            writer.Flush();
+                        });
+                    return true;
+                }
+                catch (Exception ex)
+                {
+                    try
+                    {
+                        File.AppendAllText(args[3], ex.Message + Environment.NewLine, Encoding.UTF8);
+                    }
+                    catch
+                    {
+                        // Nothing else can be reported from the maintenance process.
+                    }
+
+                    exitCode = 1;
+                    return true;
+                }
+            }
+
             if (args.Length == 3 &&
                 (string.Equals(args[0], "--pyramid-install-wine", StringComparison.Ordinal) ||
                  string.Equals(args[0], "--pyramid-reinstall-wine", StringComparison.Ordinal)))

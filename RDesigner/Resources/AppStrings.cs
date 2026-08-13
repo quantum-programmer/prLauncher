@@ -24,6 +24,31 @@ public static class AppStrings
     public static string InstallerAdvancedTitle = "Дополнительно";
     public static string InstallerAdvancedDescription = "Дополнительные сценарии установки и обслуживания будут доступны позже.";
     public static string InstallerBackButton = "Назад";
+    public static string InstallerNextButton = "Далее";
+    public static string InstallerLicenseTitle = "Лицензионное соглашение";
+    public static string InstallerLicenseAcceptText = "Я принимаю условия соглашения";
+    public static string InstallerLicenseText = """
+        ЛИЦЕНЗИОННОЕ СОГЛАШЕНИЕ НА ИСПОЛЬЗОВАНИЕ ПРОГРАММНОГО ОБЕСПЕЧЕНИЯ АРМ «ПРОМПРИБОР»
+
+        Настоящее лицензионное соглашение регулирует условия установки и использования программного обеспечения АРМ «Промприбор» (далее — Программное обеспечение).
+
+        1. ПРАВО ИСПОЛЬЗОВАНИЯ
+        Пользователю предоставляется неисключительное право устанавливать и использовать Программное обеспечение в пределах, установленных договором поставки и эксплуатационной документацией.
+
+        2. ОГРАНИЧЕНИЯ
+        Запрещается передавать Программное обеспечение третьим лицам, распространять его копии, изменять механизмы лицензирования либо использовать Программное обеспечение способами, не предусмотренными настоящим соглашением и сопроводительной документацией.
+
+        3. ОТВЕТСТВЕННОСТЬ
+        Пользователь обязан обеспечить надлежащую настройку оборудования, резервное копирование данных и соблюдение требований информационной безопасности. Программное обеспечение должно использоваться квалифицированным персоналом в соответствии с его назначением.
+
+        4. КОНФИДЕНЦИАЛЬНОСТЬ
+        Компоненты, документация и технические сведения, предоставленные вместе с Программным обеспечением, не должны раскрываться третьим лицам без разрешения правообладателя, за исключением случаев, предусмотренных законодательством.
+
+        5. СРОК ДЕЙСТВИЯ
+        Соглашение действует в течение всего срока использования Программного обеспечения. Нарушение его условий может повлечь прекращение права использования.
+
+        Принимая условия соглашения и продолжая установку, пользователь подтверждает, что ознакомился с настоящими условиями, понимает их и обладает необходимыми полномочиями для установки Программного обеспечения.
+        """;
     public static string InstallerLinuxPostgresSystemInstallNote = "PostgreSQL в Linux устанавливается системно из офлайн-пакетов. Папка установки PostgreSQL выбирается пакетным менеджером.";
     public static string InstallerSubtitle = "Установка";
     public static string InstallerInstallFolder = "Папка установки PostgreSQL";
@@ -50,7 +75,8 @@ public static class AppStrings
     public static string InstallerOilCtrlCfgLaunchFailedLog = "Ошибка запуска OilCtrlCfg: {Message}";
     public static string InstallerProductSourceBundleRootLog = "Папка исходной сборки приложений: {Directory}";
     public static string InstallerProductInstallRootLog = "Папка установки приложений: {Directory}";
-    public static string InstallerProductRemovingPreviousInstallLog = "Удаление предыдущей установки АРМ: {Directory}";
+    public static string InstallerProductRemovingPreviousInstallLog = "Удаление предыдущих приложений АРМ из папки: {Directory}. PostgreSQL и другие данные сохраняются.";
+    public static string InstallerProductRemovingApplicationLog = "Удаление приложения {Application}: {Directory}";
     public static string InstallerProductApplicationFolderNotFound = "Папка приложения не найдена: {Directory}";
     public static string InstallerProductInstallingApplicationLog = "Установка {Application}: {Source} -> {Target}";
     public static string InstallerProductOilCtrlCfgNotFound = "OilCtrlCfg не найден: {Path}";
@@ -116,6 +142,26 @@ public static class AppStrings
     public static string InstallerComponentsSkippedLog = "Компоненты: только PostgreSQL Server и Command Line Tools. Stack Builder и pgAdmin пропущены.";
     public static string InstallerDirectoryNotEmpty = "Папка установки не пуста: {Directory}. Удалите эту папку или выберите другую папку установки PostgreSQL для OilCtrl перед повторной попыткой.";
     public static string InstallerPostgresAlreadyExistsInDirectory = "В выбранной папке уже обнаружен PostgreSQL: {Directory}. Выберите другую папку установки PostgreSQL.";
+    public static string InstallerWindowsPostgresReinstallDetectedLog = "Обнаружена предыдущая установка PostgreSQL: {Directory}";
+    public static string InstallerWindowsPostgresReinstallRequiresAdminLog = "Создание резервной копии и удаление предыдущей установки PostgreSQL. Требуются права администратора.";
+    public static string InstallerWindowsPostgresUnsafeReinstallDirectory = "Выбран небезопасный каталог PostgreSQL. Нельзя удалять корень диска или весь каталог C:\\Prompribor.";
+    public static string InstallerWindowsPostgresBackupPreparingLog = "Создание резервной копии базы OilCtrl перед переустановкой PostgreSQL.";
+    public static string InstallerWindowsPostgresBackupToolNotFound = "Не найден pg_dump для резервного копирования: {Path}";
+    public static string InstallerWindowsPostgresServiceStartingForBackupLog = "Служба PostgreSQL {ServiceName} остановлена. Выполняется запуск для резервного копирования.";
+    public static string InstallerWindowsPostgresManualStartForBackupLog = "Служба PostgreSQL недоступна. Выполняется прямой запуск сервера для резервного копирования.";
+    public static string InstallerWindowsPostgresCouldNotStartForBackup = "Не удалось запустить предыдущий экземпляр PostgreSQL для резервного копирования.";
+    public static string InstallerWindowsPostgresBackupExitCode = "pg_dump завершился с кодом {ExitCode}";
+    public static string InstallerWindowsPostgresBackupCompletedLog = "Резервная копия базы OilCtrl создана: {Path}";
+    public static string InstallerWindowsPostgresBackupFailedContinuingLog = "Не удалось создать резервную копию базы OilCtrl: {Reason}. Переустановка будет продолжена.";
+    public static string InstallerWindowsPostgresStoppingServerLog = "Остановка предыдущего экземпляра PostgreSQL.";
+    public static string InstallerWindowsPostgresStopServerFailed = "Не удалось остановить предыдущий экземпляр PostgreSQL. Код завершения: {ExitCode}.";
+    public static string InstallerWindowsPostgresStoppingServiceLog = "Остановка службы PostgreSQL: {ServiceName}";
+    public static string InstallerWindowsPostgresDeletingServiceLog = "Удаление службы PostgreSQL: {ServiceName}";
+    public static string InstallerWindowsPostgresDeleteServiceFailed = "Не удалось удалить службу PostgreSQL {ServiceName}. Код завершения: {ExitCode}.";
+    public static string InstallerWindowsPostgresRemovingDirectoryLog = "Удаление предыдущей папки PostgreSQL: {Directory}";
+    public static string InstallerWindowsPostgresPreviousInstallRemovedLog = "Предыдущая установка PostgreSQL удалена.";
+    public static string InstallerWindowsPostgresRemoveDirectoryFailed = "Не удалось удалить предыдущую папку PostgreSQL: {Reason}";
+    public static string InstallerWindowsPostgresReinstallFailed = "Подготовка PostgreSQL к переустановке завершилась с кодом {ExitCode}.";
     public static string InstallerArmInstallSystemCancelledShort = "Отменено системой";
     public static string InstallerRequiredExecutablesNotFound = "PostgreSQL binaries распакованы, но необходимые исполняемые файлы не найдены в папке bin.";
     public static string InstallerClientAlreadyExistsLog = "Клиент PostgreSQL уже существует: {Path}";

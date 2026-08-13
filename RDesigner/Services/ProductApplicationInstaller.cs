@@ -72,7 +72,7 @@ public sealed class ProductApplicationInstaller
         if (reinstallExisting && Directory.Exists(targetRoot))
         {
             log(Format(AppStrings.InstallerProductRemovingPreviousInstallLog, ("Directory", targetRoot)));
-            Directory.Delete(targetRoot, recursive: true);
+            RemoveManagedApplicationFiles(targetRoot, log, cancellationToken);
         }
 
         Directory.CreateDirectory(targetRoot);
@@ -104,6 +104,34 @@ public sealed class ProductApplicationInstaller
         foreach (var application in Applications)
         {
             EnsureExecutablePermission(Path.Combine(targetRoot, application.TargetFolderName), application.ExecutableName, log);
+        }
+    }
+
+    private static void RemoveManagedApplicationFiles(
+        string targetRoot,
+        Action<string> log,
+        CancellationToken cancellationToken)
+    {
+        foreach (var application in Applications)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var applicationDirectory = Path.Combine(targetRoot, application.TargetFolderName);
+            if (!Directory.Exists(applicationDirectory))
+            {
+                continue;
+            }
+
+            log(Format(
+                AppStrings.InstallerProductRemovingApplicationLog,
+                ("Application", application.TargetFolderName),
+                ("Directory", applicationDirectory)));
+            Directory.Delete(applicationDirectory, recursive: true);
+        }
+
+        var sharedSettingsPath = Path.Combine(targetRoot, "appsettings.json");
+        if (File.Exists(sharedSettingsPath))
+        {
+            File.Delete(sharedSettingsPath);
         }
     }
 

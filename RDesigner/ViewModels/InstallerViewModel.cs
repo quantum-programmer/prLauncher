@@ -30,6 +30,8 @@ public partial class InstallerViewModel : ViewModelBase
     [NotifyCanExecuteChangedFor(nameof(InstallArmCommand))]
     [NotifyCanExecuteChangedFor(nameof(OpenServerInstallCommand))]
     [NotifyCanExecuteChangedFor(nameof(BackToWelcomeCommand))]
+    [NotifyCanExecuteChangedFor(nameof(ContinueToServerInstallCommand))]
+    [NotifyCanExecuteChangedFor(nameof(BackToLicenseCommand))]
     [NotifyCanExecuteChangedFor(nameof(RunPostgresWizardCommand))]
     [NotifyCanExecuteChangedFor(nameof(CheckPostgresCommand))]
     private bool isBusy;
@@ -45,6 +47,13 @@ public partial class InstallerViewModel : ViewModelBase
 
     [ObservableProperty]
     private bool isWelcomeVisible = true;
+
+    [ObservableProperty]
+    private bool isLicenseVisible;
+
+    [ObservableProperty]
+    [NotifyCanExecuteChangedFor(nameof(ContinueToServerInstallCommand))]
+    private bool isLicenseAccepted;
 
     [ObservableProperty]
     private bool isServerInstallVisible;
@@ -82,14 +91,34 @@ public partial class InstallerViewModel : ViewModelBase
     private void OpenServerInstall()
     {
         IsWelcomeVisible = false;
-        IsServerInstallVisible = true;
+        IsLicenseVisible = true;
     }
 
     [RelayCommand(CanExecute = nameof(CanRun))]
     private void BackToWelcome()
     {
+        IsLicenseVisible = false;
         IsServerInstallVisible = false;
         IsWelcomeVisible = true;
+    }
+
+    [RelayCommand(CanExecute = nameof(CanContinueToServerInstall))]
+    private void ContinueToServerInstall()
+    {
+        IsLicenseVisible = false;
+        IsServerInstallVisible = true;
+    }
+
+    private bool CanContinueToServerInstall()
+    {
+        return !IsBusy && IsLicenseAccepted;
+    }
+
+    [RelayCommand(CanExecute = nameof(CanRun))]
+    private void BackToLicense()
+    {
+        IsServerInstallVisible = false;
+        IsLicenseVisible = true;
     }
 
     [RelayCommand(CanExecute = nameof(CanRun))]
@@ -125,7 +154,7 @@ public partial class InstallerViewModel : ViewModelBase
             () => AppStrings.InstallerArmInstallOperation,
             async log =>
             {
-                var postgresPort = await installer.InstallAsync(WindowsInstallDirectory, log);
+                var postgresPort = await installer.InstallAsync(WindowsInstallDirectory, log, reinstallExisting);
                 await wineInstaller.InstallAsync(log, ConfirmReinstallWineAsync);
                 installResult = await applicationInstaller.InstallAsync(postgresPort, reinstallExisting, log);
                 installCompleted = true;
@@ -168,6 +197,8 @@ public partial class InstallerViewModel : ViewModelBase
                 AppendLog(AppStrings.InstallerOilCtrlCfgLaunchFailedLog.Replace("{Message}", ex.Message, StringComparison.Ordinal));
             }
         }
+
+        ReturnToWelcomeAfterSuccessfulInstall();
     }
 
     [RelayCommand(CanExecute = nameof(CanRun))]
@@ -252,6 +283,17 @@ public partial class InstallerViewModel : ViewModelBase
         IsArmInstallCompletedVisible = false;
         IsArmInstallCancelledVisible = false;
         IsArmInstallSystemCancelledVisible = false;
+    }
+
+    private void ReturnToWelcomeAfterSuccessfulInstall()
+    {
+        IsServerInstallVisible = false;
+        IsLicenseVisible = false;
+        IsWelcomeVisible = true;
+        IsLicenseAccepted = false;
+        WindowsInstallDirectory = NativePostgresInstaller.GetDefaultWindowsInstallDir();
+        ResetArmInstallIndicator();
+        SetStatus(() => AppStrings.InstallerReadyStatus);
     }
 
     private static async Task<bool> ConfirmLaunchOilCtrlCfgAsync()

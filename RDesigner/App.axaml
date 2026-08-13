@@ -4,5 +4,8 @@
              RequestedThemeVariant="Light">
     <Application.Styles>
         <FluentTheme />
+        <Style Selector="Button">
+            <Setter Property="Cursor" Value="Hand" />
+        </Style>
     </Application.Styles>
 </Application>

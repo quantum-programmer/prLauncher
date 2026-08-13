@@ -24,6 +24,31 @@ public static class EnglishAppStrings
     public const string InstallerAdvancedTitle = "Advanced";
     public const string InstallerAdvancedDescription = "Additional installation and maintenance scenarios will be available later.";
     public const string InstallerBackButton = "Back";
+    public const string InstallerNextButton = "Next";
+    public const string InstallerLicenseTitle = "License Agreement";
+    public const string InstallerLicenseAcceptText = "I accept the terms of the agreement";
+    public const string InstallerLicenseText = """
+        SOFTWARE LICENSE AGREEMENT FOR THE PROMPRIBOR WORKSTATION
+
+        This License Agreement governs the installation and use of the Prompribor workstation software (the Software).
+
+        1. RIGHT OF USE
+        The user is granted a non-exclusive right to install and use the Software within the limits established by the supply agreement and operating documentation.
+
+        2. RESTRICTIONS
+        The Software may not be transferred to third parties, redistributed, used to alter licensing mechanisms, or used in ways not permitted by this Agreement and the accompanying documentation.
+
+        3. RESPONSIBILITY
+        The user is responsible for proper equipment configuration, data backups, and compliance with information security requirements. The Software must be used by qualified personnel for its intended purpose.
+
+        4. CONFIDENTIALITY
+        Components, documentation, and technical information supplied with the Software must not be disclosed to third parties without the copyright holder's permission, except where required by law.
+
+        5. TERM
+        This Agreement remains in force throughout the period in which the Software is used. A breach of its terms may result in termination of the right to use the Software.
+
+        By accepting this Agreement and continuing the installation, the user confirms that they have read and understood these terms and have the authority required to install the Software.
+        """;
     public const string InstallerLinuxPostgresSystemInstallNote = "On Linux, PostgreSQL is installed system-wide from offline packages. The PostgreSQL installation folder is selected by the package manager.";
     public const string InstallerSubtitle = "Installation";
     public const string InstallerInstallFolder = "PostgreSQL install folder";
@@ -50,7 +75,8 @@ public static class EnglishAppStrings
     public const string InstallerOilCtrlCfgLaunchFailedLog = "OilCtrlCfg launch failed: {Message}";
     public const string InstallerProductSourceBundleRootLog = "Application bundle source folder: {Directory}";
     public const string InstallerProductInstallRootLog = "Application install folder: {Directory}";
-    public const string InstallerProductRemovingPreviousInstallLog = "Removing previous workstation installation: {Directory}";
+    public const string InstallerProductRemovingPreviousInstallLog = "Removing previous workstation applications from: {Directory}. PostgreSQL and other data are preserved.";
+    public const string InstallerProductRemovingApplicationLog = "Removing application {Application}: {Directory}";
     public const string InstallerProductApplicationFolderNotFound = "Application folder was not found: {Directory}";
     public const string InstallerProductInstallingApplicationLog = "Installing {Application}: {Source} -> {Target}";
     public const string InstallerProductOilCtrlCfgNotFound = "OilCtrlCfg was not found: {Path}";
@@ -116,6 +142,26 @@ public static class EnglishAppStrings
     public const string InstallerComponentsSkippedLog = "Components: PostgreSQL Server and Command Line Tools only. Stack Builder and pgAdmin are skipped.";
     public const string InstallerDirectoryNotEmpty = "Installation directory is not empty: {Directory}. Remove this directory or choose another OilCtrl PostgreSQL install directory before retrying.";
     public const string InstallerPostgresAlreadyExistsInDirectory = "PostgreSQL was already detected in the selected folder: {Directory}. Select another PostgreSQL installation folder.";
+    public const string InstallerWindowsPostgresReinstallDetectedLog = "A previous PostgreSQL installation was detected: {Directory}";
+    public const string InstallerWindowsPostgresReinstallRequiresAdminLog = "Backing up the database and removing the previous PostgreSQL installation. Administrator privileges are required.";
+    public const string InstallerWindowsPostgresUnsafeReinstallDirectory = "The selected PostgreSQL directory is unsafe. The drive root and the entire C:\\Prompribor directory cannot be removed.";
+    public const string InstallerWindowsPostgresBackupPreparingLog = "Backing up the OilCtrl database before reinstalling PostgreSQL.";
+    public const string InstallerWindowsPostgresBackupToolNotFound = "pg_dump was not found for database backup: {Path}";
+    public const string InstallerWindowsPostgresServiceStartingForBackupLog = "PostgreSQL service {ServiceName} is stopped. Starting it for backup.";
+    public const string InstallerWindowsPostgresManualStartForBackupLog = "The PostgreSQL service is unavailable. Starting the server directly for backup.";
+    public const string InstallerWindowsPostgresCouldNotStartForBackup = "The previous PostgreSQL instance could not be started for backup.";
+    public const string InstallerWindowsPostgresBackupExitCode = "pg_dump finished with exit code {ExitCode}";
+    public const string InstallerWindowsPostgresBackupCompletedLog = "The OilCtrl database backup was created: {Path}";
+    public const string InstallerWindowsPostgresBackupFailedContinuingLog = "The OilCtrl database could not be backed up: {Reason}. Reinstallation will continue.";
+    public const string InstallerWindowsPostgresStoppingServerLog = "Stopping the previous PostgreSQL instance.";
+    public const string InstallerWindowsPostgresStopServerFailed = "The previous PostgreSQL instance could not be stopped. Exit code: {ExitCode}.";
+    public const string InstallerWindowsPostgresStoppingServiceLog = "Stopping PostgreSQL service: {ServiceName}";
+    public const string InstallerWindowsPostgresDeletingServiceLog = "Deleting PostgreSQL service: {ServiceName}";
+    public const string InstallerWindowsPostgresDeleteServiceFailed = "PostgreSQL service {ServiceName} could not be deleted. Exit code: {ExitCode}.";
+    public const string InstallerWindowsPostgresRemovingDirectoryLog = "Removing the previous PostgreSQL directory: {Directory}";
+    public const string InstallerWindowsPostgresPreviousInstallRemovedLog = "The previous PostgreSQL installation was removed.";
+    public const string InstallerWindowsPostgresRemoveDirectoryFailed = "The previous PostgreSQL directory could not be removed: {Reason}";
+    public const string InstallerWindowsPostgresReinstallFailed = "Preparing PostgreSQL for reinstallation finished with exit code {ExitCode}.";
     public const string InstallerArmInstallSystemCancelledShort = "Cancelled by system";
     public const string InstallerRequiredExecutablesNotFound = "PostgreSQL binaries were extracted, but required executables were not found in the bin directory.";
     public const string InstallerClientAlreadyExistsLog = "PostgreSQL client already exists: {Path}";

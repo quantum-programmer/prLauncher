@@ -45,6 +45,7 @@ public sealed class NativePostgresInstaller
     public async Task<int> InstallAsync(
         string? windowsInstallDirectory,
         Action<string> log,
+        bool reinstallExisting = false,
         CancellationToken cancellationToken = default)
     {
         log(Format(AppStrings.InstallerOsLog, ("Description", RuntimeInformation.OSDescription)));
@@ -52,7 +53,7 @@ public sealed class NativePostgresInstaller
 
         if (OperatingSystem.IsWindows())
         {
-            return await InstallOnWindowsAsync(windowsInstallDirectory, log, cancellationToken);
+            return await InstallOnWindowsAsync(windowsInstallDirectory, reinstallExisting, log, cancellationToken);
         }
 
         if (OperatingSystem.IsLinux())
@@ -132,10 +133,16 @@ public sealed class NativePostgresInstaller
 
     private async Task<int> InstallOnWindowsAsync(
         string? windowsInstallDirectory,
+        bool reinstallExisting,
         Action<string> log,
         CancellationToken cancellationToken)
     {
         var installDir = NormalizeWindowsInstallDirectory(windowsInstallDirectory);
+        if (reinstallExisting && WindowsInstallDirectoryContainsPostgres(installDir))
+        {
+            await BackupAndRemoveWindowsPostgresAsync(installDir, log, cancellationToken);
+        }
+
         EnsureWindowsInstallDirectoryDoesNotContainPostgres(installDir);
         var psqlPath = await FindPsqlAsync(installDir, cancellationToken);
 
@@ -240,18 +247,28 @@ public sealed class NativePostgresInstaller
 
     private static void EnsureWindowsInstallDirectoryDoesNotContainPostgres(string installDir)
     {
-        if (!OperatingSystem.IsWindows() || !Directory.Exists(installDir))
+        if (!WindowsInstallDirectoryContainsPostgres(installDir))
         {
             return;
         }
 
-        var psqlPath = Path.Combine(installDir, "bin", "psql.exe");
-        var dataDir = Path.Combine(installDir, "data");
-        if (File.Exists(psqlPath) || Directory.Exists(dataDir) && Directory.EnumerateFileSystemEntries(dataDir).Any())
+        throw new InstallerSystemCancelledException(
+            Format(AppStrings.InstallerPostgresAlreadyExistsInDirectory, ("Directory", installDir)));
+    }
+
+    private static bool WindowsInstallDirectoryContainsPostgres(string installDir)
+    {
+        if (!OperatingSystem.IsWindows() || !Directory.Exists(installDir))
         {
-            throw new InstallerSystemCancelledException(
-                Format(AppStrings.InstallerPostgresAlreadyExistsInDirectory, ("Directory", installDir)));
+            return false;
         }
+
+        var binDirectory = Path.Combine(installDir, "bin");
+        var dataDirectory = Path.Combine(installDir, "data");
+        return File.Exists(Path.Combine(binDirectory, "postgres.exe")) ||
+               File.Exists(Path.Combine(binDirectory, "psql.exe")) ||
+               File.Exists(Path.Combine(binDirectory, "pg_ctl.exe")) ||
+               Directory.Exists(dataDirectory) && Directory.EnumerateFileSystemEntries(dataDirectory).Any();
     }
 
     private async Task InitializeDatabaseAsync(string psqlPath, int port, Action<string> log, CancellationToken cancellationToken)
@@ -586,6 +603,430 @@ public sealed class NativePostgresInstaller
         RegisterAndStartWindowsServiceAsync(pgCtlPath, serviceName, installDir, dataDir, log, CancellationToken.None, runAsAdmin: false)
             .GetAwaiter()
             .GetResult();
+    }
+
+    private static async Task BackupAndRemoveWindowsPostgresAsync(
+        string installDir,
+        Action<string> log,
+        CancellationToken cancellationToken)
+    {
+        var backupDirectory = Path.GetFullPath(@"C:\Prompribor");
+        if (string.Equals(
+                installDir.TrimEnd(Path.DirectorySeparatorChar),
+                backupDirectory.TrimEnd(Path.DirectorySeparatorChar),
+                StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InstallerSystemCancelledException(AppStrings.InstallerWindowsPostgresUnsafeReinstallDirectory);
+        }
+
+        log(Format(AppStrings.InstallerWindowsPostgresReinstallDetectedLog, ("Directory", installDir)));
+        log(AppStrings.InstallerWindowsPostgresReinstallRequiresAdminLog);
+
+        var logPath = Path.Combine(Path.GetTempPath(), $"pyramid-postgres-reinstall-{Guid.NewGuid():N}.log");
+        var (fileName, arguments) = GetCurrentApplicationCommandLine(
+            "--pyramid-reinstall-postgres",
+            installDir,
+            backupDirectory,
+            logPath);
+
+        var result = await RunProcessAsync(
+            fileName,
+            arguments.ToArray(),
+            log,
+            cancellationToken,
+            runAsAdmin: true,
+            throwOnError: false);
+
+        if (File.Exists(logPath))
+        {
+            foreach (var line in File.ReadLines(logPath, Encoding.UTF8))
+            {
+                log(line);
+            }
+        }
+
+        TryDeleteFile(logPath);
+
+        if (result.ExitCode != 0)
+        {
+            throw new InvalidOperationException(
+                Format(AppStrings.InstallerWindowsPostgresReinstallFailed, ("ExitCode", result.ExitCode.ToString())));
+        }
+    }
+
+    public static void BackupAndRemoveWindowsPostgresFromMaintenance(
+        string installDir,
+        string backupDirectory,
+        Action<string> log)
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            throw new PlatformNotSupportedException(AppStrings.InstallerInteractiveWindowsOnly);
+        }
+
+        installDir = Path.GetFullPath(installDir);
+        backupDirectory = Path.GetFullPath(backupDirectory);
+        if (string.Equals(
+                installDir.TrimEnd(Path.DirectorySeparatorChar),
+                backupDirectory.TrimEnd(Path.DirectorySeparatorChar),
+                StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidOperationException(AppStrings.InstallerWindowsPostgresUnsafeReinstallDirectory);
+        }
+
+        Directory.CreateDirectory(backupDirectory);
+        var services = FindWindowsPostgresServicesForDirectory(installDir);
+        TryBackupWindowsDatabase(installDir, backupDirectory, services, log);
+        StopAndDeleteWindowsPostgresServices(services, log);
+        StopWindowsPostgresServer(installDir, log);
+        RemoveWindowsPostgresDirectory(installDir, log);
+    }
+
+    private static void TryBackupWindowsDatabase(
+        string installDir,
+        string backupDirectory,
+        IReadOnlyList<string> services,
+        Action<string> log)
+    {
+        log(AppStrings.InstallerWindowsPostgresBackupPreparingLog);
+        var binDirectory = Path.Combine(installDir, "bin");
+        var dataDirectory = Path.Combine(installDir, "data");
+        var pgDumpPath = Path.Combine(binDirectory, "pg_dump.exe");
+        var pgCtlPath = Path.Combine(binDirectory, "pg_ctl.exe");
+        var partialBackupPath = string.Empty;
+
+        try
+        {
+            if (!File.Exists(pgDumpPath))
+            {
+                throw new FileNotFoundException(
+                    Format(AppStrings.InstallerWindowsPostgresBackupToolNotFound, ("Path", pgDumpPath)));
+            }
+
+            var port = TryReadPostgresPort(installDir)
+                ?? services.Select(TryReadPortFromServiceName).FirstOrDefault(value => value.HasValue)
+                ?? PreferredServerPort;
+
+            var serverRunning = false;
+            foreach (var serviceName in services)
+            {
+                if (GetWindowsServiceStateCode(serviceName) == 4)
+                {
+                    serverRunning = true;
+                    break;
+                }
+
+                log(Format(
+                    AppStrings.InstallerWindowsPostgresServiceStartingForBackupLog,
+                    ("ServiceName", serviceName)));
+                RunProcessAsync(
+                        "sc.exe",
+                        new[] { "start", serviceName },
+                        log,
+                        CancellationToken.None,
+                        throwOnError: false,
+                        outputEncoding: GetWindowsOemEncoding())
+                    .GetAwaiter()
+                    .GetResult();
+
+                if (WaitForWindowsServiceState(serviceName, 4, TimeSpan.FromSeconds(30)))
+                {
+                    serverRunning = true;
+                    break;
+                }
+            }
+
+            if (!serverRunning && File.Exists(pgCtlPath) && Directory.Exists(dataDirectory))
+            {
+                log(AppStrings.InstallerWindowsPostgresManualStartForBackupLog);
+                var startResult = RunProcessAsync(
+                        pgCtlPath,
+                        new[] { "start", "-D", dataDirectory, "-w", "-t", "30" },
+                        log,
+                        CancellationToken.None,
+                        throwOnError: false,
+                        outputEncoding: GetWindowsOemEncoding())
+                    .GetAwaiter()
+                    .GetResult();
+                serverRunning = startResult.ExitCode == 0;
+            }
+
+            if (!serverRunning)
+            {
+                throw new InvalidOperationException(AppStrings.InstallerWindowsPostgresCouldNotStartForBackup);
+            }
+
+            var backupPath = GetUniqueDatabaseBackupPath(backupDirectory);
+            partialBackupPath = backupPath + ".partial";
+            var dumpResult = RunProcessAsync(
+                    pgDumpPath,
+                    new[]
+                    {
+                        "-h", "localhost",
+                        "-p", port.ToString(CultureInfo.InvariantCulture),
+                        "-U", SuperUser,
+                        "-d", DatabaseName,
+                        "-F", "c",
+                        "-f", partialBackupPath
+                    },
+                    log,
+                    CancellationToken.None,
+                    new Dictionary<string, string> { ["PGPASSWORD"] = SuperPassword },
+                    throwOnError: false,
+                    outputEncoding: GetWindowsAnsiEncoding())
+                .GetAwaiter()
+                .GetResult();
+
+            if (dumpResult.ExitCode != 0 || !File.Exists(partialBackupPath))
+            {
+                var reason = string.IsNullOrWhiteSpace(dumpResult.Error)
+                    ? Format(AppStrings.InstallerWindowsPostgresBackupExitCode, ("ExitCode", dumpResult.ExitCode.ToString()))
+                    : dumpResult.Error.Trim();
+                throw new InvalidOperationException(reason);
+            }
+
+            File.Move(partialBackupPath, backupPath);
+            partialBackupPath = string.Empty;
+            log(Format(AppStrings.InstallerWindowsPostgresBackupCompletedLog, ("Path", backupPath)));
+        }
+        catch (Exception ex)
+        {
+            log(Format(
+                AppStrings.InstallerWindowsPostgresBackupFailedContinuingLog,
+                ("Reason", ex.Message)));
+        }
+        finally
+        {
+            if (!string.IsNullOrWhiteSpace(partialBackupPath))
+            {
+                TryDeleteFile(partialBackupPath);
+            }
+        }
+    }
+
+    private static IReadOnlyList<string> FindWindowsPostgresServicesForDirectory(string installDir)
+    {
+        var result = new List<string>();
+        if (!OperatingSystem.IsWindows())
+        {
+            return result;
+        }
+
+        using var services = Registry.LocalMachine.OpenSubKey(@"SYSTEM\CurrentControlSet\Services");
+        if (services is null)
+        {
+            return result;
+        }
+
+        var normalizedInstallDir = installDir.TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar;
+        foreach (var serviceName in services.GetSubKeyNames()
+                     .Where(name => name.StartsWith("postgresql", StringComparison.OrdinalIgnoreCase)))
+        {
+            using var service = services.OpenSubKey(serviceName);
+            var imagePath = service?.GetValue("ImagePath") as string;
+            if (!string.IsNullOrWhiteSpace(imagePath) &&
+                imagePath.Contains(normalizedInstallDir, StringComparison.OrdinalIgnoreCase))
+            {
+                result.Add(serviceName);
+            }
+        }
+
+        return result;
+    }
+
+    private static void StopAndDeleteWindowsPostgresServices(
+        IReadOnlyList<string> services,
+        Action<string> log)
+    {
+        foreach (var serviceName in services)
+        {
+            if (GetWindowsServiceStateCode(serviceName) is not null and not 1)
+            {
+                log(Format(AppStrings.InstallerWindowsPostgresStoppingServiceLog, ("ServiceName", serviceName)));
+                RunProcessAsync(
+                        "sc.exe",
+                        new[] { "stop", serviceName },
+                        log,
+                        CancellationToken.None,
+                        throwOnError: false,
+                        outputEncoding: GetWindowsAnsiEncoding())
+                    .GetAwaiter()
+                    .GetResult();
+                WaitForWindowsServiceState(serviceName, 1, TimeSpan.FromSeconds(30));
+            }
+
+            log(Format(AppStrings.InstallerWindowsPostgresDeletingServiceLog, ("ServiceName", serviceName)));
+            var deleteResult = RunProcessAsync(
+                    "sc.exe",
+                    new[] { "delete", serviceName },
+                    log,
+                    CancellationToken.None,
+                    throwOnError: false,
+                    outputEncoding: GetWindowsOemEncoding())
+                .GetAwaiter()
+                .GetResult();
+            if (deleteResult.ExitCode != 0 && GetWindowsServiceStateCode(serviceName) is not null)
+            {
+                throw new InvalidOperationException(Format(
+                    AppStrings.InstallerWindowsPostgresDeleteServiceFailed,
+                    ("ServiceName", serviceName),
+                    ("ExitCode", deleteResult.ExitCode.ToString())));
+            }
+        }
+    }
+
+    private static void StopWindowsPostgresServer(string installDir, Action<string> log)
+    {
+        var pgCtlPath = Path.Combine(installDir, "bin", "pg_ctl.exe");
+        var dataDirectory = Path.Combine(installDir, "data");
+        if (!File.Exists(pgCtlPath) || !Directory.Exists(dataDirectory))
+        {
+            return;
+        }
+
+        var status = RunProcessAsync(
+                pgCtlPath,
+                new[] { "status", "-D", dataDirectory },
+                _ => { },
+                CancellationToken.None,
+                throwOnError: false,
+                outputEncoding: GetWindowsAnsiEncoding())
+            .GetAwaiter()
+            .GetResult();
+        if (status.ExitCode != 0)
+        {
+            return;
+        }
+
+        log(AppStrings.InstallerWindowsPostgresStoppingServerLog);
+        var stopResult = RunProcessAsync(
+                pgCtlPath,
+                new[] { "stop", "-D", dataDirectory, "-m", "fast", "-w", "-t", "30" },
+                log,
+                CancellationToken.None,
+                throwOnError: false,
+                outputEncoding: GetWindowsAnsiEncoding())
+            .GetAwaiter()
+            .GetResult();
+        if (stopResult.ExitCode != 0)
+        {
+            throw new InvalidOperationException(Format(
+                AppStrings.InstallerWindowsPostgresStopServerFailed,
+                ("ExitCode", stopResult.ExitCode.ToString())));
+        }
+    }
+
+    private static void RemoveWindowsPostgresDirectory(string installDir, Action<string> log)
+    {
+        if (!Directory.Exists(installDir))
+        {
+            return;
+        }
+
+        var root = Path.GetPathRoot(installDir);
+        if (string.IsNullOrWhiteSpace(root) ||
+            string.Equals(installDir.TrimEnd(Path.DirectorySeparatorChar), root.TrimEnd(Path.DirectorySeparatorChar), StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidOperationException(AppStrings.InstallerWindowsPostgresUnsafeReinstallDirectory);
+        }
+
+        log(Format(AppStrings.InstallerWindowsPostgresRemovingDirectoryLog, ("Directory", installDir)));
+        Exception? lastError = null;
+        for (var attempt = 1; attempt <= 10; attempt++)
+        {
+            try
+            {
+                Directory.Delete(installDir, recursive: true);
+                log(AppStrings.InstallerWindowsPostgresPreviousInstallRemovedLog);
+                return;
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                lastError = ex;
+                Thread.Sleep(500);
+            }
+        }
+
+        throw new IOException(
+            Format(AppStrings.InstallerWindowsPostgresRemoveDirectoryFailed, ("Reason", lastError?.Message ?? string.Empty)),
+            lastError);
+    }
+
+    private static int? GetWindowsServiceStateCode(string serviceName)
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            return null;
+        }
+
+        var managerHandle = OpenSCManager(null, null, ScManagerConnect);
+        if (managerHandle == IntPtr.Zero)
+        {
+            return null;
+        }
+
+        try
+        {
+            var serviceHandle = OpenService(managerHandle, serviceName, ServiceQueryStatus);
+            if (serviceHandle == IntPtr.Zero)
+            {
+                return null;
+            }
+
+            try
+            {
+                return QueryServiceStatusEx(
+                    serviceHandle,
+                    ScStatusProcessInfo,
+                    out var status,
+                    Marshal.SizeOf<ServiceStatusProcess>(),
+                    out _)
+                    ? (int)status.CurrentState
+                    : null;
+            }
+            finally
+            {
+                CloseServiceHandle(serviceHandle);
+            }
+        }
+        finally
+        {
+            CloseServiceHandle(managerHandle);
+        }
+    }
+
+    private static bool WaitForWindowsServiceState(string serviceName, int expectedState, TimeSpan timeout)
+    {
+        var stopwatch = Stopwatch.StartNew();
+        while (stopwatch.Elapsed < timeout)
+        {
+            if (GetWindowsServiceStateCode(serviceName) == expectedState)
+            {
+                return true;
+            }
+
+            Thread.Sleep(500);
+        }
+
+        return false;
+    }
+
+    private static int? TryReadPortFromServiceName(string serviceName)
+    {
+        var match = Regex.Match(serviceName, @"-(\d{4,5})$");
+        return match.Success && int.TryParse(match.Groups[1].Value, out var port) ? port : null;
+    }
+
+    private static string GetUniqueDatabaseBackupPath(string backupDirectory)
+    {
+        var baseName = $"OilCtrl-backup-{DateTime.Now:yyyyMMdd-HHmmss}";
+        var path = Path.Combine(backupDirectory, baseName + ".backup");
+        for (var suffix = 2; File.Exists(path) || File.Exists(path + ".partial"); suffix++)
+        {
+            path = Path.Combine(backupDirectory, $"{baseName}-{suffix}.backup");
+        }
+
+        return path;
     }
 
     private static async Task RunElevatedWindowsBinariesInstallAsync(
@@ -992,10 +1433,7 @@ public sealed class NativePostgresInstaller
 
     public static string GetDefaultWindowsInstallDir()
     {
-        return Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles),
-            "PostgreSQL",
-            "16.14-oilctrl");
+        return @"C:\Prompribor\PostgreSQL";
     }
 
     private static string NormalizeWindowsInstallDirectory(string? windowsInstallDirectory)
@@ -1999,6 +2437,24 @@ public sealed class NativePostgresInstaller
         }
     }
 
+    private static Encoding GetWindowsOemEncoding()
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            return Encoding.UTF8;
+        }
+
+        try
+        {
+            Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
+            return Encoding.GetEncoding(CultureInfo.CurrentCulture.TextInfo.OEMCodePage);
+        }
+        catch (ArgumentException)
+        {
+            return Encoding.Default;
+        }
+    }
+
     private static string EscapePowerShellSingleQuotedString(string value)
     {
         return value.Replace("'", "''", StringComparison.Ordinal);
@@ -2027,6 +2483,43 @@ public sealed class NativePostgresInstaller
         {
             // Best-effort cleanup of temporary installer helper files.
         }
+    }
+
+    private const uint ScManagerConnect = 0x0001;
+    private const uint ServiceQueryStatus = 0x0004;
+    private const int ScStatusProcessInfo = 0;
+
+    [DllImport("advapi32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    private static extern IntPtr OpenSCManager(string? machineName, string? databaseName, uint desiredAccess);
+
+    [DllImport("advapi32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    private static extern IntPtr OpenService(IntPtr serviceManager, string serviceName, uint desiredAccess);
+
+    [DllImport("advapi32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool QueryServiceStatusEx(
+        IntPtr service,
+        int infoLevel,
+        out ServiceStatusProcess status,
+        int bufferSize,
+        out int bytesNeeded);
+
+    [DllImport("advapi32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool CloseServiceHandle(IntPtr serviceHandle);
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct ServiceStatusProcess
+    {
+        public uint ServiceType;
+        public uint CurrentState;
+        public uint ControlsAccepted;
+        public uint Win32ExitCode;
+        public uint ServiceSpecificExitCode;
+        public uint CheckPoint;
+        public uint WaitHint;
+        public uint ProcessId;
+        public uint ServiceFlags;
     }
 
     private sealed record ProcessResult(int ExitCode, string Output, string Error);
