@@ -58,7 +58,7 @@ public sealed class NativePostgresInstaller
 
         if (OperatingSystem.IsLinux())
         {
-            return await InstallOnLinuxAsync(log, cancellationToken);
+            return await InstallOnLinuxAsync(reinstallExisting, log, cancellationToken);
         }
 
         throw new PlatformNotSupportedException(AppStrings.InstallerPlatformNotSupported);
@@ -214,9 +214,18 @@ public sealed class NativePostgresInstaller
         return installedPort;
     }
 
-    private async Task<int> InstallOnLinuxAsync(Action<string> log, CancellationToken cancellationToken)
+    private async Task<int> InstallOnLinuxAsync(
+        bool reinstallExisting,
+        Action<string> log,
+        CancellationToken cancellationToken)
     {
         await EnsureAstraOrDebianLinuxAsync(log, cancellationToken);
+
+        if (reinstallExisting)
+        {
+            await BackupAndRemoveLinuxOilCtrlClusterAsync(log, cancellationToken);
+        }
+
         await RunLinuxSetupScriptsAsync(log, cancellationToken);
 
         var psqlPath = await FindPsqlAsync(null, cancellationToken);
@@ -1831,6 +1840,188 @@ public sealed class NativePostgresInstaller
             cancellationToken);
     }
 
+    private static async Task BackupAndRemoveLinuxOilCtrlClusterAsync(
+        Action<string> log,
+        CancellationToken cancellationToken)
+    {
+        const string installRoot = "/opt/prompribor";
+        var configuredPort = TryReadLinuxInstalledArmPort();
+        log(AppStrings.InstallerLinuxPostgresReinstallScanLog);
+        if (configuredPort is not null)
+        {
+            log(Format(
+                AppStrings.InstallerLinuxPostgresConfiguredPortLog,
+                ("Port", configuredPort.Value.ToString(CultureInfo.InvariantCulture))));
+        }
+
+        var backupPath = Path.Combine(
+            installRoot,
+            $"OilCtrl-backup-{DateTime.Now:yyyyMMdd-HHmmss}-{Guid.NewGuid():N}.backup");
+        var partialBackupPath = Path.Combine(
+            Path.GetTempPath(),
+            $"pyramid-oilctrl-backup-{Guid.NewGuid():N}.partial");
+        var configuredPortValue = configuredPort?.ToString(CultureInfo.InvariantCulture) ?? string.Empty;
+
+        await RunLinuxPrivilegedScriptAsync(
+            $$"""
+            set -u
+            install_root={{ShellQuote(installRoot)}}
+            backup_path={{ShellQuote(backupPath)}}
+            partial_backup={{ShellQuote(partialBackupPath)}}
+            preferred_port={{ShellQuote(configuredPortValue)}}
+            clusters_file="$(mktemp /tmp/pyramid-postgres-clusters-XXXXXX)"
+            cleanup() {
+              rm -f "$clusters_file" "$partial_backup"
+            }
+            trap cleanup EXIT INT TERM
+
+            mkdir -p "$install_root"
+            chmod 755 "$install_root"
+            if ! command -v pg_lsclusters >/dev/null 2>&1; then
+              printf '%s\n' {{ShellQuote(AppStrings.InstallerLinuxPostgresClusterToolsNotFoundLog)}}
+              exit 0
+            fi
+
+            pg_lsclusters --no-header > "$clusters_file" 2>/dev/null || true
+            if [ ! -s "$clusters_file" ]; then
+              printf '%s\n' {{ShellQuote(AppStrings.InstallerLinuxPostgresNoClustersLog)}}
+              exit 0
+            fi
+
+            found=0
+            for scan_mode in preferred managed all; do
+              while read -r version name port status owner data_directory log_file; do
+                [ -n "${version:-}" ] || continue
+                case "$scan_mode" in
+                  preferred)
+                    [ -n "$preferred_port" ] || continue
+                    [ "$port" = "$preferred_port" ] || continue
+                    ;;
+                  managed)
+                    case "$name" in oilctrl-*) ;; *) continue ;; esac
+                    [ -z "$preferred_port" ] || [ "$port" != "$preferred_port" ] || continue
+                    ;;
+                  all)
+                    [ -z "$preferred_port" ] || [ "$port" != "$preferred_port" ] || continue
+                    case "$name" in oilctrl-*) continue ;; esac
+                    ;;
+                esac
+
+                printf {{ShellQuote(ShellPrintfFormat(AppStrings.InstallerLinuxPostgresCheckingClusterLog, "Cluster", "Port") + "\n")}} "$version/$name" "$port"
+                service_name="oilctrl-postgresql-$name.service"
+                was_started=0
+                if [ "$status" != "online" ]; then
+                  printf {{ShellQuote(ShellPrintfFormat(AppStrings.InstallerLinuxPostgresStartingClusterForBackupLog, "Cluster") + "\n")}} "$version/$name"
+                  if [ -f "/etc/systemd/system/$service_name" ]; then
+                    systemctl start "$service_name" >/dev/null 2>&1 || true
+                  else
+                    pg_ctlcluster "$version" "$name" start >/dev/null 2>&1 || true
+                  fi
+                  was_started=1
+                fi
+
+                database_exit=0
+                database_result="$(su - postgres -c "psql -p $port -d postgres -tAc \"select 1 from pg_database where datname = 'OilCtrl';\"" 2>&1)" || database_exit=$?
+                if [ "$database_exit" -ne 0 ]; then
+                  printf {{ShellQuote(ShellPrintfFormat(AppStrings.InstallerLinuxPostgresClusterCheckFailedLog, "Cluster", "Reason") + "\n")}} "$version/$name" "$database_result"
+                  if [ "$was_started" = "1" ]; then
+                    pg_ctlcluster "$version" "$name" stop >/dev/null 2>&1 || true
+                  fi
+                  continue
+                fi
+
+                if [ "$(printf '%s' "$database_result" | tr -d '[:space:]')" != "1" ]; then
+                  if [ "$was_started" = "1" ]; then
+                    pg_ctlcluster "$version" "$name" stop >/dev/null 2>&1 || true
+                  fi
+                  continue
+                fi
+
+                found=1
+                printf {{ShellQuote(ShellPrintfFormat(AppStrings.InstallerLinuxPostgresOilCtrlFoundLog, "Cluster", "Port") + "\n")}} "$version/$name" "$port"
+                rm -f "$partial_backup"
+                touch "$partial_backup"
+                chown postgres:postgres "$partial_backup"
+                pg_dump_path="/usr/lib/postgresql/$version/bin/pg_dump"
+                [ -x "$pg_dump_path" ] || pg_dump_path="$(command -v pg_dump 2>/dev/null || true)"
+
+                backup_error=""
+                if [ -z "$pg_dump_path" ]; then
+                  backup_error={{ShellQuote(AppStrings.InstallerLinuxPostgresPgDumpNotFoundLog)}}
+                else
+                  backup_exit=0
+                  backup_error="$(su - postgres -c "\"$pg_dump_path\" -p $port -d OilCtrl -F c -f \"$partial_backup\"" 2>&1)" || backup_exit=$?
+                  if [ "$backup_exit" -eq 0 ] && [ -s "$partial_backup" ]; then
+                    mv "$partial_backup" "$backup_path"
+                    chown root:root "$backup_path"
+                    chmod 644 "$backup_path"
+                    printf {{ShellQuote(ShellPrintfFormat(AppStrings.InstallerLinuxPostgresBackupCompletedLog, "Path") + "\n")}} "$backup_path"
+                  else
+                    [ -n "$backup_error" ] || backup_error="pg_dump exit code $backup_exit"
+                  fi
+                fi
+
+                if [ -n "$backup_error" ]; then
+                  printf {{ShellQuote(ShellPrintfFormat(AppStrings.InstallerLinuxPostgresBackupFailedContinuingLog, "Reason") + "\n")}} "$backup_error"
+                fi
+
+                printf {{ShellQuote(ShellPrintfFormat(AppStrings.InstallerLinuxPostgresRemovingClusterLog, "Cluster") + "\n")}} "$version/$name"
+                systemctl disable --now "$service_name" >/dev/null 2>&1 || true
+                rm -f "/etc/systemd/system/$service_name"
+                systemctl daemon-reload >/dev/null 2>&1 || true
+                if pg_dropcluster --stop "$version" "$name"; then
+                  printf {{ShellQuote(ShellPrintfFormat(AppStrings.InstallerLinuxPostgresClusterRemovedLog, "Cluster") + "\n")}} "$version/$name"
+                else
+                  printf {{ShellQuote(ShellPrintfFormat(AppStrings.InstallerLinuxPostgresClusterRemoveFailedLog, "Cluster") + "\n")}} "$version/$name"
+                  exit 1
+                fi
+                break 2
+              done < "$clusters_file"
+            done
+
+            if [ "$found" = "0" ]; then
+              printf '%s\n' {{ShellQuote(AppStrings.InstallerLinuxPostgresOilCtrlNotFoundLog)}}
+            fi
+            """,
+            log,
+            cancellationToken);
+    }
+
+    private static int? TryReadLinuxInstalledArmPort()
+    {
+        const string settingsPath = "/opt/prompribor/appsettings.json";
+        if (!File.Exists(settingsPath))
+        {
+            return null;
+        }
+
+        try
+        {
+            var root = JsonNode.Parse(File.ReadAllText(settingsPath, Encoding.UTF8)) as JsonObject;
+            var portNode = root?["Database"]?["Port"];
+            if (portNode is null)
+            {
+                return null;
+            }
+
+            return int.TryParse(portNode.ToString(), CultureInfo.InvariantCulture, out var port)
+                ? port
+                : null;
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+        catch (IOException)
+        {
+            return null;
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return null;
+        }
+    }
+
     private static string? FindLinuxDebPackagesDirectory()
     {
         var installersDir = Path.Combine(AppContext.BaseDirectory, "Installers");
@@ -2468,6 +2659,17 @@ public sealed class NativePostgresInstaller
     private static string ShellQuote(string value)
     {
         return "'" + value.Replace("'", "'\"'\"'", StringComparison.Ordinal) + "'";
+    }
+
+    private static string ShellPrintfFormat(string template, params string[] placeholders)
+    {
+        template = template.Replace("%", "%%", StringComparison.Ordinal);
+        foreach (var placeholder in placeholders)
+        {
+            template = template.Replace("{" + placeholder + "}", "%s", StringComparison.Ordinal);
+        }
+
+        return template;
     }
 
     private static void TryDeleteFile(string path)
