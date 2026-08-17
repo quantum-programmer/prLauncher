@@ -84,7 +84,6 @@ public partial class InstallerViewModel : ViewModelBase
         this.applicationInstaller = applicationInstaller;
         LocalizationManager.LanguageChanged += OnLanguageChanged;
         SetStatus(() => AppStrings.InstallerReadyStatus);
-        AppendLog(AppStrings.InstallerPutInstallerLog);
     }
 
     [RelayCommand(CanExecute = nameof(CanRun))]

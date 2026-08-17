@@ -100,7 +100,6 @@ public static class AppStrings
     public static string InstallerCompletedStatus = "Операция выполнена";
     public static string InstallerErrorStatus = "Ошибка";
     public static string InstallerSystemCancelledStatus = "Отменено системой";
-    public static string InstallerPutInstallerLog = "Поместите архив PostgreSQL 16.14 для Windows или PGDG .deb-пакеты для Astra Linux 1.8 в папку Installers рядом с приложением.";
     public static string InstallerMainWindowNotFoundLog = "Главное окно не найдено. Диалог выбора папки не может быть открыт.";
     public static string InstallerSelectPostgresFolderTitle = "Выберите папку установки PostgreSQL";
     public static string InstallerDirectorySelectedLog = "Выбрана папка установки: {Directory}";

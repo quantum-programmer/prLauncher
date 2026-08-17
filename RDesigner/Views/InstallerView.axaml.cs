@@ -12,14 +12,18 @@ namespace Pyramid.Views;
 
 public partial class InstallerView : UserControl
 {
+    private bool isUpdatingLanguageSelector;
+
     public InstallerView(IServiceProvider serviceProvider)
     {
         InitializeComponent();
+        UpdateLanguageSelector();
         PopulateLicenseAgreement();
         AttachedToVisualTree += (_, _) =>
         {
             LocalizationManager.LanguageChanged -= OnLanguageChanged;
             LocalizationManager.LanguageChanged += OnLanguageChanged;
+            UpdateLanguageSelector();
             PopulateLicenseAgreement();
         };
         DetachedFromVisualTree += (_, _) => LocalizationManager.LanguageChanged -= OnLanguageChanged;
@@ -62,7 +66,34 @@ public partial class InstallerView : UserControl
 
     private void OnLanguageChanged(object? sender, EventArgs e)
     {
+        UpdateLanguageSelector();
         PopulateLicenseAgreement();
+    }
+
+    private void OnLanguageSelectionChanged(object? sender, SelectionChangedEventArgs e)
+    {
+        if (isUpdatingLanguageSelector
+            || LanguageSelector.SelectedItem is not ComboBoxItem item
+            || item.Tag is not string languageName
+            || !Enum.TryParse(languageName, ignoreCase: true, out AppLanguage language))
+        {
+            return;
+        }
+
+        LocalizationManager.SelectLanguage(language);
+    }
+
+    private void UpdateLanguageSelector()
+    {
+        isUpdatingLanguageSelector = true;
+        try
+        {
+            LanguageSelector.SelectedIndex = LocalizationManager.CurrentLanguage == AppLanguage.Russian ? 0 : 1;
+        }
+        finally
+        {
+            isUpdatingLanguageSelector = false;
+        }
     }
 
     private void AddTitle(string title)

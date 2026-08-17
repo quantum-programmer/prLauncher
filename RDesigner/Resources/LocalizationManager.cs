@@ -51,6 +51,14 @@ public static class LocalizationManager
             ? AppLanguage.English
             : AppLanguage.Russian;
 
+        SelectLanguage(language);
+    }
+
+    public static void SelectLanguage(AppLanguage language)
+    {
+        if (CurrentLanguage == language)
+            return;
+
         Apply(language);
         SaveLanguage(language);
         Log.Information(AppStrings.LanguageChanged, language);

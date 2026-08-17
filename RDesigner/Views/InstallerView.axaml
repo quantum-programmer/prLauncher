@@ -247,5 +247,36 @@
                 </ScrollViewer>
             </Border>
         </Grid>
+
+        <ComboBox x:Name="LanguageSelector"
+                  SelectionChanged="OnLanguageSelectionChanged"
+                  HorizontalAlignment="Right"
+                  VerticalAlignment="Top"
+                  Width="142"
+                  Height="34"
+                  Padding="8 0"
+                  Cursor="Hand"
+                  ZIndex="10">
+            <ComboBoxItem Tag="Russian">
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                    <TextBlock Text="🇷🇺"
+                               Width="22"
+                               FontSize="16"
+                               VerticalAlignment="Center" />
+                    <TextBlock Text="русский"
+                               VerticalAlignment="Center" />
+                </StackPanel>
+            </ComboBoxItem>
+            <ComboBoxItem Tag="English">
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                    <TextBlock Text="🇬🇧"
+                               Width="22"
+                               FontSize="16"
+                               VerticalAlignment="Center" />
+                    <TextBlock Text="english"
+                               VerticalAlignment="Center" />
+                </StackPanel>
+            </ComboBoxItem>
+        </ComboBox>
     </Grid>
 </UserControl>

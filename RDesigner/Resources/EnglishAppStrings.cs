@@ -100,7 +100,6 @@ public static class EnglishAppStrings
     public const string InstallerCompletedStatus = "Operation completed";
     public const string InstallerErrorStatus = "Error";
     public const string InstallerSystemCancelledStatus = "Cancelled by system";
-    public const string InstallerPutInstallerLog = "Put the PostgreSQL 16.14 Windows archive or Astra Linux 1.8 PGDG .deb packages into the Installers folder next to the application.";
     public const string InstallerMainWindowNotFoundLog = "Main window was not found. Folder dialog cannot be opened.";
     public const string InstallerSelectPostgresFolderTitle = "Select PostgreSQL installation folder";
     public const string InstallerDirectorySelectedLog = "Install directory selected: {Directory}";
