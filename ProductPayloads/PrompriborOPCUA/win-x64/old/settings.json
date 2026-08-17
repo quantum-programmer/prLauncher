@@ -1,0 +1,17 @@
+{
+  "logPath" : "D:\!!!TEMP\Log",
+  "Ports": [
+    {
+      "classID": "ModbusMasterRTU",
+      "number": "COM1",
+      "baudrate": 9600,
+      "parity": 2,
+      "Devices": [
+		  {
+			  "classID": "factory.device.KMK2",
+			  "address": 247			  
+		  }        
+      ]
+    }
+  ]
+}

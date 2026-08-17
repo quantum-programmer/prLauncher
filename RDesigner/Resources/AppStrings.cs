@@ -27,28 +27,7 @@ public static class AppStrings
     public static string InstallerNextButton = "Далее";
     public static string InstallerLicenseTitle = "Лицензионное соглашение";
     public static string InstallerLicenseAcceptText = "Я принимаю условия соглашения";
-    public static string InstallerLicenseText = """
-        ЛИЦЕНЗИОННОЕ СОГЛАШЕНИЕ НА ИСПОЛЬЗОВАНИЕ ПРОГРАММНОГО ОБЕСПЕЧЕНИЯ АРМ «ПРОМПРИБОР»
-
-        Настоящее лицензионное соглашение регулирует условия установки и использования программного обеспечения АРМ «Промприбор» (далее — Программное обеспечение).
-
-        1. ПРАВО ИСПОЛЬЗОВАНИЯ
-        Пользователю предоставляется неисключительное право устанавливать и использовать Программное обеспечение в пределах, установленных договором поставки и эксплуатационной документацией.
-
-        2. ОГРАНИЧЕНИЯ
-        Запрещается передавать Программное обеспечение третьим лицам, распространять его копии, изменять механизмы лицензирования либо использовать Программное обеспечение способами, не предусмотренными настоящим соглашением и сопроводительной документацией.
-
-        3. ОТВЕТСТВЕННОСТЬ
-        Пользователь обязан обеспечить надлежащую настройку оборудования, резервное копирование данных и соблюдение требований информационной безопасности. Программное обеспечение должно использоваться квалифицированным персоналом в соответствии с его назначением.
-
-        4. КОНФИДЕНЦИАЛЬНОСТЬ
-        Компоненты, документация и технические сведения, предоставленные вместе с Программным обеспечением, не должны раскрываться третьим лицам без разрешения правообладателя, за исключением случаев, предусмотренных законодательством.
-
-        5. СРОК ДЕЙСТВИЯ
-        Соглашение действует в течение всего срока использования Программного обеспечения. Нарушение его условий может повлечь прекращение права использования.
-
-        Принимая условия соглашения и продолжая установку, пользователь подтверждает, что ознакомился с настоящими условиями, понимает их и обладает необходимыми полномочиями для установки Программного обеспечения.
-        """;
+    public static string InstallerLicenseText = LicenseAgreementText.OfficialRussian;
     public static string InstallerLinuxPostgresSystemInstallNote = "PostgreSQL в Linux устанавливается системно из офлайн-пакетов. Папка установки PostgreSQL выбирается пакетным менеджером.";
     public static string InstallerSubtitle = "Установка";
     public static string InstallerInstallFolder = "Папка установки PostgreSQL";
@@ -81,7 +60,7 @@ public static class AppStrings
     public static string InstallerProductInstallingApplicationLog = "Установка {Application}: {Source} -> {Target}";
     public static string InstallerProductOilCtrlCfgNotFound = "OilCtrlCfg не найден: {Path}";
     public static string InstallerProductPlatformNotSupported = "Установка приложений поддерживается только в Windows и Linux.";
-    public static string InstallerProductBundleRootNotFound = "Не найдена папка поставочной сборки с приложениями ASNCtrl_Linux, R_Designer_L и OilCtrlCfg. Запускайте Pyramid из общей single-сборки.";
+    public static string InstallerProductBundleRootNotFound = "Не найдена папка поставочной сборки с приложениями ASNCtrl_Linux, R_Designer_L, OilCtrlCfg и PrompriborOPCUA. Запускайте Pyramid из общей single-сборки.";
     public static string InstallerProductWindowsCopyRequiresAdminLog = "Копирование приложений в C:\\Prompribor. Требуются права администратора.";
     public static string InstallerProductLinuxCopyRequiresAdminLog = "Копирование приложений в /opt/prompribor. Требуются права администратора.";
     public static string InstallerProductElevatedHelperStartFailed = "Не удалось запустить elevated helper для установки приложений.";
@@ -95,6 +74,27 @@ public static class AppStrings
     public static string InstallerProductInstallTreePermissionsSetLog = "Для папки установки выставлены права чтения: {Directory}";
     public static string InstallerProductCopiedFilesProgressLog = "Скопировано файлов для {Application}: {Count}...";
     public static string InstallerProductInstallCompletedLog = "Установка {Application} завершена. Скопировано файлов: {Count}.";
+    public static string InstallerProductOpcUaExecutableNotFound = "Исполняемый файл службы Prompribor OPC UA не найден: {Path}";
+    public static string InstallerProductOpcUaStaleServiceLog = "Обнаружена ранее зарегистрированная служба Prompribor OPC UA. Выполняется удаление старой регистрации.";
+    public static string InstallerProductOpcUaInstallingServiceLog = "Регистрация службы Prompribor OPC UA: {Path}";
+    public static string InstallerProductOpcUaInstallFailed = "Регистрация службы Prompribor OPC UA завершилась с кодом {ExitCode}.";
+    public static string InstallerProductOpcUaRegistrationNotFound = "Команда установки завершилась, но служба Prompribor OPC UA не найдена в диспетчере служб.";
+    public static string InstallerProductOpcUaServiceRegisteredLog = "Служба Prompribor OPC UA зарегистрирована: {ServiceName}";
+    public static string InstallerProductOpcUaManualStartupConfiguredLog = "Для службы Prompribor OPC UA установлен ручной запуск; автозапуск отключен.";
+    public static string InstallerProductOpcUaManualStartupFailed = "Не удалось отключить автозапуск службы Prompribor OPC UA. Код завершения: {ExitCode}.";
+    public static string InstallerProductOpcUaUninstallingServiceLog = "Удаление предыдущей регистрации службы Prompribor OPC UA: {ServiceName}";
+    public static string InstallerProductOpcUaBuiltInUninstallFallbackLog = "Встроенная команда удаления не сняла регистрацию службы Prompribor OPC UA. Используется системное удаление.";
+    public static string InstallerProductOpcUaUninstallFailed = "Не удалось удалить предыдущую службу Prompribor OPC UA. Код завершения: {ExitCode}.";
+    public static string InstallerProductOpcUaServiceUninstalledLog = "Предыдущая служба Prompribor OPC UA удалена.";
+    public static string InstallerProductOpcUaVerificationStartedLog = "Проверка службы и OPC UA endpoint. Служба будет временно запущена и затем остановлена.";
+    public static string InstallerProductOpcUaServiceStartWarningLog = "Не удалось временно запустить службу Prompribor OPC UA. Код завершения: {ExitCode}. Проверьте конфигурацию и оборудование.";
+    public static string InstallerProductOpcUaEndpointAvailableLog = "OPC UA endpoint доступен: {Endpoint}";
+    public static string InstallerProductOpcUaEndpointAlreadyOccupiedWarningLog = "Порт {Port} был занят до запуска службы. Принадлежность endpoint службе Prompribor OPC UA подтвердить невозможно.";
+    public static string InstallerProductOpcUaEndpointUnavailableWarningLog = "Служба запущена, но OPC UA endpoint {Endpoint} не стал доступен. Проверьте settings.json, оборудование и журнал службы.";
+    public static string InstallerProductOpcUaServiceLeftStoppedLog = "Проверка Prompribor OPC UA завершена. Служба установлена и оставлена в остановленном состоянии.";
+    public static string InstallerProductOpcUaSettingsNotFound = "Файл настроек Prompribor OPC UA не найден: {Path}";
+    public static string InstallerProductOpcUaSettingsInstalledLog = "Файл настроек Prompribor OPC UA установлен: {Path}";
+    public static string InstallerProductOpcUaSettingsPreservedLog = "Существующий файл настроек Prompribor OPC UA сохранен без изменений: {Path}";
     public static string InstallerWizardOperation = "Мастер установки PostgreSQL";
     public static string InstallerCheckOperation = "Проверка PostgreSQL";
     public static string InstallerCompletedStatus = "Операция выполнена";

@@ -117,8 +117,19 @@
       <OilCtrlCfgProject>$(MSBuildProjectDirectory)\..\..\OilCtrlCfg\OilCtrlCfg\OilCtrlCfg.csproj</OilCtrlCfgProject>
       <ASNCtrlLinuxProject>$(MSBuildProjectDirectory)\..\..\..\ASNCtrl_Linux\ARM\ARM.csproj</ASNCtrlLinuxProject>
       <RDesignerLProject>$(MSBuildProjectDirectory)\..\..\R_Designer_L\RDesigner\RDesigner.csproj</RDesignerLProject>
+      <PrompriborOpcUaPayloadRoot>$(MSBuildProjectDirectory)\..\ProductPayloads\PrompriborOPCUA</PrompriborOpcUaPayloadRoot>
       <SelfContainedPublishProperties>-p:PublishSingleFile=false -p:PublishTrimmed=false</SelfContainedPublishProperties>
     </PropertyGroup>
+
+    <Error Condition="!Exists('$(PrompriborOpcUaPayloadRoot)\win-x64\prompribor_opcua_service.exe')"
+           Text="PrompriborOPCUA Windows payload was not found: $(PrompriborOpcUaPayloadRoot)\win-x64" />
+    <Error Condition="!Exists('$(PrompriborOpcUaPayloadRoot)\linux-x64\Prompribor_OPC_UA_Service-x86_64.AppImage')"
+           Text="PrompriborOPCUA Linux payload was not found: $(PrompriborOpcUaPayloadRoot)\linux-x64" />
+
+    <ItemGroup>
+      <PrompriborOpcUaWindowsPayload Include="$(PrompriborOpcUaPayloadRoot)\win-x64\**\*" />
+      <PrompriborOpcUaLinuxPayload Include="$(PrompriborOpcUaPayloadRoot)\linux-x64\**\*" />
+    </ItemGroup>
 
     <RemoveDir Directories="$(SelfContainedSingleRoot)\win-x64\$(SelfContainedSingleFolderName)" />
     <RemoveDir Directories="$(SelfContainedSingleRoot)\linux-x64\$(SelfContainedSingleFolderName)" />
@@ -156,6 +167,14 @@
     <Message Importance="High" Text="Publishing single bundle: R_Designer_L self-contained $(SelfContainedPublishConfiguration) linux-x64..." />
     <Exec Command="dotnet publish &quot;$(RDesignerLProject)&quot; -c $(SelfContainedPublishConfiguration) -r linux-x64 --self-contained true $(SelfContainedPublishProperties) -o &quot;$(SelfContainedSingleRoot)\linux-x64\$(SelfContainedSingleFolderName)\R_Designer_L&quot;" />
     <Delete Files="$(SelfContainedSingleRoot)\linux-x64\$(SelfContainedSingleFolderName)\R_Designer_L\appsettings.json" />
+
+    <Message Importance="High" Text="Copying PrompriborOPCUA prebuilt payloads into the single bundle..." />
+    <Copy SourceFiles="@(PrompriborOpcUaWindowsPayload)"
+          DestinationFiles="@(PrompriborOpcUaWindowsPayload->'$(SelfContainedSingleRoot)\win-x64\$(SelfContainedSingleFolderName)\PrompriborOPCUA\%(RecursiveDir)%(Filename)%(Extension)')"
+          SkipUnchangedFiles="true" />
+    <Copy SourceFiles="@(PrompriborOpcUaLinuxPayload)"
+          DestinationFiles="@(PrompriborOpcUaLinuxPayload->'$(SelfContainedSingleRoot)\linux-x64\$(SelfContainedSingleFolderName)\PrompriborOPCUA\%(RecursiveDir)%(Filename)%(Extension)')"
+          SkipUnchangedFiles="true" />
 
     <Copy SourceFiles="$(MSBuildProjectDirectory)\..\appsettings.json"
           DestinationFiles="$(SelfContainedSingleRoot)\win-x64\$(SelfContainedSingleFolderName)\.appsettings.json.tmp" />

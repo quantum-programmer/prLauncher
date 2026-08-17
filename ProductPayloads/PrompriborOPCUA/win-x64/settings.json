@@ -1,0 +1,80 @@
+{
+    "Ports": [	           
+		{
+            "Devices": [
+                {
+                    "address": 5,
+                    "classID": "factory.device.TopazDevice",
+					"opcname": "Пост2"						
+                }
+            ],            
+            "classID": "TopazMasterRTU",
+            "number": "COM1",
+            "timeout": 2000,
+            "interval": 20,
+            "losePacket": 20
+        },
+		{			 
+            "Devices": [
+                {
+                    "address": 247,
+                    "classID": "factory.device.MBCustom",
+					"opcname": "Пост1",
+					"vars":
+						[
+							{
+								"name": "TotalV",
+								"opcParentName": "Post1",
+								"datatype": "VT_UI4",
+								"OPCWritable" : false,
+								"mbaddress" : 100,
+								"byteorder" : 0,
+								"round" : 2,
+								"kfactor" : 0.1,
+								"minvalue" : 0,
+								"maxvalue" : 10000,
+								"func" : 3,
+								"init_value" : 15
+							},
+							{
+								"name": "State",
+								"opcParentName": "Post1",
+								"datatype": "VT_UI2",
+								"OPCWritable" : true,
+								"mbaddress" : 120,
+								"byteorder" : 0,
+								"round" : 0,
+								"kfactor" : 1,
+								"minvalue" : 0,
+								"maxvalue" : 7,
+								"func" : 3,
+								"init_value" : 0
+							}
+						]
+                }
+            ],
+            "baudrate": 9600,
+            "classID": "ModbusMasterRTU",
+            "number": "COM1",
+            "parity": 2
+        }
+    ],
+    "Users": [
+        {
+            "login": "admin",
+            "password_hash": "0192023a7bbd73250516f069df18b500",
+            "role": "Admin"
+        },
+        {
+            "login": "operator",
+            "password_hash": "5f4dcc3b5aa765d61d8327deb882cf99",
+            "role": "Operator"
+        },
+        {
+            "login": "guest",
+            "password_hash": "084e0343a0486ff05530df6c705c8bb4",
+            "role": "Viewer"
+        }
+    ],
+    "logPath": "d:\\!!!TEMP\\Log"
+}

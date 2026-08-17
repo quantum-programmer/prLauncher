@@ -104,11 +104,7 @@
                     Padding="18">
                 <ScrollViewer VerticalScrollBarVisibility="Auto"
                               HorizontalScrollBarVisibility="Disabled">
-                    <TextBlock Text="{DynamicResource InstallerLicenseText}"
-                               TextWrapping="Wrap"
-                               FontSize="14"
-                               LineHeight="21"
-                               Foreground="#303030" />
+                    <StackPanel x:Name="LicenseDocumentPanel" />
                 </ScrollViewer>
             </Border>
 

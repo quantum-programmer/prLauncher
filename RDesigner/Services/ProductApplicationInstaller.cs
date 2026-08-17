@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
+using System.Net.Sockets;
 using System.Runtime.InteropServices;
 using System.Text;
 using System.Text.Encodings.Web;
@@ -19,12 +20,24 @@ public sealed class ProductApplicationInstaller
     private const string WindowsInstallRoot = @"C:\Prompribor";
     private const string LinuxInstallRoot = "/opt/prompribor";
     private const string PostgresCredentialId = "OilCtrl.PostgreSQL.Postgres";
+    private const string PrompriborOpcUaFolderName = "PrompriborOPCUA";
+    private const string WindowsPrompriborOpcUaExecutable = "prompribor_opcua_service.exe";
+    private const string LinuxPrompriborOpcUaExecutable = "Prompribor_OPC_UA_Service-x86_64.AppImage";
+    private const string WindowsPrompriborOpcUaServiceName = "PrompriborOPCUAService";
+    private const string LinuxPrompriborOpcUaServiceName = "prompribor_opcua_service.service";
+    private const string LinuxPrompriborOpcUaConfigDirectory = "/root/.config/prompribor_opcua";
+    private const string PrompriborOpcUaSettingsFileName = "settings.json";
+    private const int PrompriborOpcUaPort = 4840;
 
     private static readonly ApplicationInstallItem[] Applications =
     [
         new("ASNCtrl_Linux", "AsnCtrl", OperatingSystem.IsWindows() ? "ARM.exe" : "ARM"),
         new("R_Designer_L", "RDesigner", OperatingSystem.IsWindows() ? "RDesigner.exe" : "RDesigner"),
-        new("OilCtrlCfg", "OilCtrlCfg", OperatingSystem.IsWindows() ? "OilCtrlCfg.exe" : "OilCtrlCfg")
+        new("OilCtrlCfg", "OilCtrlCfg", OperatingSystem.IsWindows() ? "OilCtrlCfg.exe" : "OilCtrlCfg"),
+        new(
+            PrompriborOpcUaFolderName,
+            PrompriborOpcUaFolderName,
+            OperatingSystem.IsWindows() ? WindowsPrompriborOpcUaExecutable : LinuxPrompriborOpcUaExecutable)
     ];
 
     public async Task<ApplicationInstallResult> InstallAsync(int postgresPort, bool reinstallExisting, Action<string> log, CancellationToken cancellationToken = default)
@@ -72,6 +85,7 @@ public sealed class ProductApplicationInstaller
         if (reinstallExisting && Directory.Exists(targetRoot))
         {
             log(Format(AppStrings.InstallerProductRemovingPreviousInstallLog, ("Directory", targetRoot)));
+            UninstallPrompriborOpcUaService(targetRoot, log);
             RemoveManagedApplicationFiles(targetRoot, log, cancellationToken);
         }
 
@@ -105,6 +119,8 @@ public sealed class ProductApplicationInstaller
         {
             EnsureExecutablePermission(Path.Combine(targetRoot, application.TargetFolderName), application.ExecutableName, log);
         }
+
+        InstallAndVerifyPrompriborOpcUaService(targetRoot, log);
     }
 
     private static void RemoveManagedApplicationFiles(
@@ -208,7 +224,8 @@ public sealed class ProductApplicationInstaller
     private static bool LooksLikeProductBundleRoot(string directory) =>
         Directory.Exists(Path.Combine(directory, "ASNCtrl_Linux"))
         && Directory.Exists(Path.Combine(directory, "R_Designer_L"))
-        && Directory.Exists(Path.Combine(directory, "OilCtrlCfg"));
+        && Directory.Exists(Path.Combine(directory, "OilCtrlCfg"))
+        && Directory.Exists(Path.Combine(directory, PrompriborOpcUaFolderName));
 
     private static void RunElevatedWindowsInstall(
         string sourceRoot,
@@ -386,6 +403,414 @@ public sealed class ProductApplicationInstaller
         }
 
         return startInfo;
+    }
+
+    private static void InstallAndVerifyPrompriborOpcUaService(string targetRoot, Action<string> log)
+    {
+        var executablePath = GetPrompriborOpcUaExecutablePath(targetRoot);
+        if (!File.Exists(executablePath))
+        {
+            throw new FileNotFoundException(Format(
+                AppStrings.InstallerProductOpcUaExecutableNotFound,
+                ("Path", executablePath)));
+        }
+
+        if (IsPrompriborOpcUaServiceRegistered())
+        {
+            log(AppStrings.InstallerProductOpcUaStaleServiceLog);
+            UninstallPrompriborOpcUaService(targetRoot, log);
+        }
+
+        log(Format(AppStrings.InstallerProductOpcUaInstallingServiceLog, ("Path", executablePath)));
+        var installResult = OperatingSystem.IsLinux()
+            ? InstallLinuxPrompriborOpcUaSystemdService(executablePath, log)
+            : RunLoggedProcess(
+                executablePath,
+                ["-install"],
+                Path.GetDirectoryName(executablePath)!,
+                log);
+        if (installResult.ExitCode != 0)
+        {
+            throw new InvalidOperationException(Format(
+                AppStrings.InstallerProductOpcUaInstallFailed,
+                ("ExitCode", installResult.ExitCode.ToString())));
+        }
+
+        if (!WaitForPrompriborOpcUaServiceRegistration(expectedRegistered: true, TimeSpan.FromSeconds(10)))
+        {
+            throw new InvalidOperationException(AppStrings.InstallerProductOpcUaRegistrationNotFound);
+        }
+
+        log(Format(
+            AppStrings.InstallerProductOpcUaServiceRegisteredLog,
+            ("ServiceName", GetPrompriborOpcUaServiceName())));
+        ConfigurePrompriborOpcUaManualStartup(log);
+        VerifyPrompriborOpcUaService(log);
+    }
+
+    private static void UninstallPrompriborOpcUaService(string targetRoot, Action<string> log)
+    {
+        if (!IsPrompriborOpcUaServiceRegistered())
+        {
+            return;
+        }
+
+        var executablePath = GetPrompriborOpcUaExecutablePath(targetRoot);
+        log(Format(
+            AppStrings.InstallerProductOpcUaUninstallingServiceLog,
+            ("ServiceName", GetPrompriborOpcUaServiceName())));
+
+        ProcessExecutionResult? uninstallResult;
+        if (OperatingSystem.IsLinux())
+        {
+            uninstallResult = RemovePrompriborOpcUaServiceRegistration(log);
+        }
+        else if (File.Exists(executablePath))
+        {
+            uninstallResult = RunLoggedProcess(
+                executablePath,
+                ["-uninstall"],
+                Path.GetDirectoryName(executablePath)!,
+                log);
+        }
+        else
+        {
+            uninstallResult = null;
+        }
+
+        if (IsPrompriborOpcUaServiceRegistered())
+        {
+            log(AppStrings.InstallerProductOpcUaBuiltInUninstallFallbackLog);
+            uninstallResult = RemovePrompriborOpcUaServiceRegistration(log);
+        }
+
+        if (!WaitForPrompriborOpcUaServiceRegistration(expectedRegistered: false, TimeSpan.FromSeconds(10)))
+        {
+            throw new InvalidOperationException(Format(
+                AppStrings.InstallerProductOpcUaUninstallFailed,
+                ("ExitCode", (uninstallResult?.ExitCode ?? -1).ToString())));
+        }
+
+        log(AppStrings.InstallerProductOpcUaServiceUninstalledLog);
+    }
+
+    private static void VerifyPrompriborOpcUaService(Action<string> log)
+    {
+        log(AppStrings.InstallerProductOpcUaVerificationStartedLog);
+        var portWasOpen = CanConnectToTcpPort(PrompriborOpcUaPort, TimeSpan.FromMilliseconds(500));
+        var startResult = StartPrompriborOpcUaService(log);
+
+        try
+        {
+            if (startResult.ExitCode != 0)
+            {
+                log(Format(
+                    AppStrings.InstallerProductOpcUaServiceStartWarningLog,
+                    ("ExitCode", startResult.ExitCode.ToString())));
+                return;
+            }
+
+            var endpointAvailable = WaitForTcpPort(PrompriborOpcUaPort, TimeSpan.FromSeconds(30));
+            if (endpointAvailable && !portWasOpen)
+            {
+                log(Format(
+                    AppStrings.InstallerProductOpcUaEndpointAvailableLog,
+                    ("Endpoint", $"opc.tcp://localhost:{PrompriborOpcUaPort}")));
+            }
+            else if (endpointAvailable)
+            {
+                log(Format(
+                    AppStrings.InstallerProductOpcUaEndpointAlreadyOccupiedWarningLog,
+                    ("Port", PrompriborOpcUaPort.ToString())));
+            }
+            else
+            {
+                log(Format(
+                    AppStrings.InstallerProductOpcUaEndpointUnavailableWarningLog,
+                    ("Endpoint", $"opc.tcp://localhost:{PrompriborOpcUaPort}")));
+            }
+        }
+        finally
+        {
+            StopPrompriborOpcUaService(log);
+            log(AppStrings.InstallerProductOpcUaServiceLeftStoppedLog);
+        }
+    }
+
+    private static ProcessExecutionResult StartPrompriborOpcUaService(Action<string> log)
+    {
+        return OperatingSystem.IsWindows()
+            ? RunLoggedProcess("sc.exe", ["start", WindowsPrompriborOpcUaServiceName], null, log)
+            : RunLoggedProcess("systemctl", ["start", LinuxPrompriborOpcUaServiceName], null, log);
+    }
+
+    private static void StopPrompriborOpcUaService(Action<string> log)
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            RunLoggedProcess("sc.exe", ["stop", WindowsPrompriborOpcUaServiceName], null, log);
+        }
+        else if (OperatingSystem.IsLinux())
+        {
+            RunLoggedProcess("systemctl", ["disable", "--now", LinuxPrompriborOpcUaServiceName], null, log);
+        }
+    }
+
+    private static void ConfigurePrompriborOpcUaManualStartup(Action<string> log)
+    {
+        var result = OperatingSystem.IsWindows()
+            ? RunLoggedProcess(
+                "sc.exe",
+                ["config", WindowsPrompriborOpcUaServiceName, "start=", "demand"],
+                null,
+                log)
+            : RunLoggedProcess(
+                "systemctl",
+                ["disable", LinuxPrompriborOpcUaServiceName],
+                null,
+                log);
+
+        if (result.ExitCode != 0)
+        {
+            throw new InvalidOperationException(Format(
+                AppStrings.InstallerProductOpcUaManualStartupFailed,
+                ("ExitCode", result.ExitCode.ToString())));
+        }
+
+        log(AppStrings.InstallerProductOpcUaManualStartupConfiguredLog);
+    }
+
+    private static bool IsPrompriborOpcUaServiceRegistered()
+    {
+        ProcessExecutionResult result;
+        if (OperatingSystem.IsWindows())
+        {
+            result = RunLoggedProcess("sc.exe", ["query", WindowsPrompriborOpcUaServiceName], null, _ => { });
+        }
+        else if (OperatingSystem.IsLinux())
+        {
+            result = RunLoggedProcess("systemctl", ["cat", LinuxPrompriborOpcUaServiceName], null, _ => { });
+        }
+        else
+        {
+            return false;
+        }
+
+        return result.ExitCode == 0;
+    }
+
+    private static bool WaitForPrompriborOpcUaServiceRegistration(bool expectedRegistered, TimeSpan timeout)
+    {
+        var stopwatch = Stopwatch.StartNew();
+        while (stopwatch.Elapsed < timeout)
+        {
+            if (IsPrompriborOpcUaServiceRegistered() == expectedRegistered)
+            {
+                return true;
+            }
+
+            Thread.Sleep(250);
+        }
+
+        return IsPrompriborOpcUaServiceRegistered() == expectedRegistered;
+    }
+
+    private static ProcessExecutionResult InstallLinuxPrompriborOpcUaSystemdService(
+        string executablePath,
+        Action<string> log)
+    {
+        if (!OperatingSystem.IsLinux())
+        {
+            throw new PlatformNotSupportedException();
+        }
+
+        File.SetUnixFileMode(
+            executablePath,
+            File.GetUnixFileMode(executablePath)
+            | UnixFileMode.UserExecute
+            | UnixFileMode.GroupExecute
+            | UnixFileMode.OtherExecute);
+
+        var workingDirectory = Path.GetDirectoryName(executablePath)!;
+        InstallLinuxPrompriborOpcUaSettings(workingDirectory, log);
+
+        var unitPath = Path.Combine("/etc/systemd/system", LinuxPrompriborOpcUaServiceName);
+        File.Delete(unitPath);
+        var unit = $"""
+            [Unit]
+            Description=Prompribor OPC UA Server
+            After=network.target
+
+            [Service]
+            Type=forking
+            Environment=HOME=/root
+            WorkingDirectory={workingDirectory}
+            ExecStart={executablePath}
+            KillMode=control-group
+            Restart=on-failure
+            RestartSec=5
+            TimeoutStopSec=15
+
+            [Install]
+            WantedBy=multi-user.target
+            """;
+
+        File.WriteAllText(unitPath, unit + Environment.NewLine, new UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
+        return RunLoggedProcess("systemctl", ["daemon-reload"], null, log);
+    }
+
+    private static void InstallLinuxPrompriborOpcUaSettings(string sourceDirectory, Action<string> log)
+    {
+        if (!OperatingSystem.IsLinux())
+        {
+            throw new PlatformNotSupportedException();
+        }
+
+        var sourcePath = Path.Combine(sourceDirectory, PrompriborOpcUaSettingsFileName);
+        if (!File.Exists(sourcePath))
+        {
+            throw new FileNotFoundException(Format(
+                AppStrings.InstallerProductOpcUaSettingsNotFound,
+                ("Path", sourcePath)));
+        }
+
+        Directory.CreateDirectory(LinuxPrompriborOpcUaConfigDirectory);
+        File.SetUnixFileMode(
+            LinuxPrompriborOpcUaConfigDirectory,
+            UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+
+        var targetPath = Path.Combine(
+            LinuxPrompriborOpcUaConfigDirectory,
+            PrompriborOpcUaSettingsFileName);
+        if (File.Exists(targetPath))
+        {
+            log(Format(
+                AppStrings.InstallerProductOpcUaSettingsPreservedLog,
+                ("Path", targetPath)));
+            return;
+        }
+
+        File.Copy(sourcePath, targetPath);
+        File.SetUnixFileMode(targetPath, UnixFileMode.UserRead | UnixFileMode.UserWrite);
+        log(Format(
+            AppStrings.InstallerProductOpcUaSettingsInstalledLog,
+            ("Path", targetPath)));
+    }
+
+    private static ProcessExecutionResult RemovePrompriborOpcUaServiceRegistration(Action<string> log)
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            RunLoggedProcess("sc.exe", ["stop", WindowsPrompriborOpcUaServiceName], null, log);
+            return RunLoggedProcess("sc.exe", ["delete", WindowsPrompriborOpcUaServiceName], null, log);
+        }
+
+        if (!OperatingSystem.IsLinux())
+        {
+            return new ProcessExecutionResult(-1, string.Empty, string.Empty);
+        }
+
+        RunLoggedProcess("systemctl", ["disable", "--now", LinuxPrompriborOpcUaServiceName], null, log);
+        var unitPath = Path.Combine("/etc/systemd/system", LinuxPrompriborOpcUaServiceName);
+        if (File.Exists(unitPath))
+        {
+            File.Delete(unitPath);
+        }
+
+        return RunLoggedProcess("systemctl", ["daemon-reload"], null, log);
+    }
+
+    private static string GetPrompriborOpcUaExecutablePath(string targetRoot)
+    {
+        return Path.Combine(
+            targetRoot,
+            PrompriborOpcUaFolderName,
+            OperatingSystem.IsWindows() ? WindowsPrompriborOpcUaExecutable : LinuxPrompriborOpcUaExecutable);
+    }
+
+    private static string GetPrompriborOpcUaServiceName()
+    {
+        return OperatingSystem.IsWindows()
+            ? WindowsPrompriborOpcUaServiceName
+            : LinuxPrompriborOpcUaServiceName;
+    }
+
+    private static bool WaitForTcpPort(int port, TimeSpan timeout)
+    {
+        var stopwatch = Stopwatch.StartNew();
+        while (stopwatch.Elapsed < timeout)
+        {
+            if (CanConnectToTcpPort(port, TimeSpan.FromMilliseconds(500)))
+            {
+                return true;
+            }
+
+            Thread.Sleep(500);
+        }
+
+        return false;
+    }
+
+    private static bool CanConnectToTcpPort(int port, TimeSpan timeout)
+    {
+        try
+        {
+            using var client = new TcpClient();
+            client.ConnectAsync("127.0.0.1", port)
+                .WaitAsync(timeout)
+                .GetAwaiter()
+                .GetResult();
+            return client.Connected;
+        }
+        catch (Exception ex) when (ex is SocketException or TimeoutException or IOException)
+        {
+            return false;
+        }
+    }
+
+    private static ProcessExecutionResult RunLoggedProcess(
+        string fileName,
+        IReadOnlyList<string> arguments,
+        string? workingDirectory,
+        Action<string> log)
+    {
+        var startInfo = new ProcessStartInfo
+        {
+            FileName = fileName,
+            WorkingDirectory = workingDirectory ?? string.Empty,
+            UseShellExecute = false,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            CreateNoWindow = true
+        };
+
+        foreach (var argument in arguments)
+        {
+            startInfo.ArgumentList.Add(argument);
+        }
+
+        var prefix = $"[{Path.GetFileNameWithoutExtension(fileName).ToLowerInvariant()}]";
+        log($"{prefix} > {fileName} {string.Join(" ", arguments)}");
+        using var process = Process.Start(startInfo)
+            ?? throw new InvalidOperationException(AppStrings.InstallerProductElevatedHelperStartFailed);
+        var outputTask = process.StandardOutput.ReadToEndAsync();
+        var errorTask = process.StandardError.ReadToEndAsync();
+        process.WaitForExit();
+        Task.WaitAll(outputTask, errorTask);
+
+        var output = outputTask.Result;
+        var error = errorTask.Result;
+        foreach (var line in output.Split(Environment.NewLine, StringSplitOptions.RemoveEmptyEntries))
+        {
+            log($"{prefix} {line}");
+        }
+
+        foreach (var line in error.Split(Environment.NewLine, StringSplitOptions.RemoveEmptyEntries))
+        {
+            log($"{prefix} {line}");
+        }
+
+        return new ProcessExecutionResult(process.ExitCode, output, error);
     }
 
     private static string ShellQuote(string value) => "'" + value.Replace("'", "'\\''", StringComparison.Ordinal) + "'";
@@ -575,6 +1000,8 @@ public sealed class ProductApplicationInstaller
     private sealed record ApplicationInstallItem(string SourceFolderName, string TargetFolderName, string ExecutableName);
 
     private sealed record LinuxPrivilegeHelper(string FileName, IReadOnlyList<string> Arguments);
+
+    private sealed record ProcessExecutionResult(int ExitCode, string Output, string Error);
 }
 
 public sealed record ApplicationInstallResult(string InstallRoot, string OilCtrlCfgPath);

@@ -27,28 +27,7 @@ public static class EnglishAppStrings
     public const string InstallerNextButton = "Next";
     public const string InstallerLicenseTitle = "License Agreement";
     public const string InstallerLicenseAcceptText = "I accept the terms of the agreement";
-    public const string InstallerLicenseText = """
-        SOFTWARE LICENSE AGREEMENT FOR THE PROMPRIBOR WORKSTATION
-
-        This License Agreement governs the installation and use of the Prompribor workstation software (the Software).
-
-        1. RIGHT OF USE
-        The user is granted a non-exclusive right to install and use the Software within the limits established by the supply agreement and operating documentation.
-
-        2. RESTRICTIONS
-        The Software may not be transferred to third parties, redistributed, used to alter licensing mechanisms, or used in ways not permitted by this Agreement and the accompanying documentation.
-
-        3. RESPONSIBILITY
-        The user is responsible for proper equipment configuration, data backups, and compliance with information security requirements. The Software must be used by qualified personnel for its intended purpose.
-
-        4. CONFIDENTIALITY
-        Components, documentation, and technical information supplied with the Software must not be disclosed to third parties without the copyright holder's permission, except where required by law.
-
-        5. TERM
-        This Agreement remains in force throughout the period in which the Software is used. A breach of its terms may result in termination of the right to use the Software.
-
-        By accepting this Agreement and continuing the installation, the user confirms that they have read and understood these terms and have the authority required to install the Software.
-        """;
+    public const string InstallerLicenseText = LicenseAgreementText.OfficialEnglish;
     public const string InstallerLinuxPostgresSystemInstallNote = "On Linux, PostgreSQL is installed system-wide from offline packages. The PostgreSQL installation folder is selected by the package manager.";
     public const string InstallerSubtitle = "Installation";
     public const string InstallerInstallFolder = "PostgreSQL install folder";
@@ -81,7 +60,7 @@ public static class EnglishAppStrings
     public const string InstallerProductInstallingApplicationLog = "Installing {Application}: {Source} -> {Target}";
     public const string InstallerProductOilCtrlCfgNotFound = "OilCtrlCfg was not found: {Path}";
     public const string InstallerProductPlatformNotSupported = "Application installation is supported only on Windows and Linux.";
-    public const string InstallerProductBundleRootNotFound = "The product bundle folder with ASNCtrl_Linux, R_Designer_L, and OilCtrlCfg was not found. Start Pyramid from the shared single build.";
+    public const string InstallerProductBundleRootNotFound = "The product bundle folder with ASNCtrl_Linux, R_Designer_L, OilCtrlCfg, and PrompriborOPCUA was not found. Start Pyramid from the shared single build.";
     public const string InstallerProductWindowsCopyRequiresAdminLog = "Copying applications to C:\\Prompribor. Administrator privileges are required.";
     public const string InstallerProductLinuxCopyRequiresAdminLog = "Copying applications to /opt/prompribor. Administrator privileges are required.";
     public const string InstallerProductElevatedHelperStartFailed = "Could not start the elevated helper for application installation.";
@@ -95,6 +74,27 @@ public static class EnglishAppStrings
     public const string InstallerProductInstallTreePermissionsSetLog = "Read permissions were set for install folder: {Directory}";
     public const string InstallerProductCopiedFilesProgressLog = "Copied files for {Application}: {Count}...";
     public const string InstallerProductInstallCompletedLog = "{Application} installation completed. Copied files: {Count}.";
+    public const string InstallerProductOpcUaExecutableNotFound = "The Prompribor OPC UA service executable was not found: {Path}";
+    public const string InstallerProductOpcUaStaleServiceLog = "A previously registered Prompribor OPC UA service was detected. Removing the old registration.";
+    public const string InstallerProductOpcUaInstallingServiceLog = "Registering the Prompribor OPC UA service: {Path}";
+    public const string InstallerProductOpcUaInstallFailed = "Prompribor OPC UA service registration finished with exit code {ExitCode}.";
+    public const string InstallerProductOpcUaRegistrationNotFound = "The installation command completed, but the Prompribor OPC UA service was not found in the service manager.";
+    public const string InstallerProductOpcUaServiceRegisteredLog = "The Prompribor OPC UA service was registered: {ServiceName}";
+    public const string InstallerProductOpcUaManualStartupConfiguredLog = "Manual startup was configured for the Prompribor OPC UA service; automatic startup is disabled.";
+    public const string InstallerProductOpcUaManualStartupFailed = "Automatic startup could not be disabled for the Prompribor OPC UA service. Exit code: {ExitCode}.";
+    public const string InstallerProductOpcUaUninstallingServiceLog = "Removing the previous Prompribor OPC UA service registration: {ServiceName}";
+    public const string InstallerProductOpcUaBuiltInUninstallFallbackLog = "The built-in uninstall command did not remove the Prompribor OPC UA service registration. Using system removal.";
+    public const string InstallerProductOpcUaUninstallFailed = "The previous Prompribor OPC UA service could not be removed. Exit code: {ExitCode}.";
+    public const string InstallerProductOpcUaServiceUninstalledLog = "The previous Prompribor OPC UA service was removed.";
+    public const string InstallerProductOpcUaVerificationStartedLog = "Verifying the service and OPC UA endpoint. The service will be started temporarily and then stopped.";
+    public const string InstallerProductOpcUaServiceStartWarningLog = "The Prompribor OPC UA service could not be started temporarily. Exit code: {ExitCode}. Check its configuration and hardware.";
+    public const string InstallerProductOpcUaEndpointAvailableLog = "The OPC UA endpoint is available: {Endpoint}";
+    public const string InstallerProductOpcUaEndpointAlreadyOccupiedWarningLog = "Port {Port} was occupied before the service started. The endpoint cannot be confirmed as belonging to the Prompribor OPC UA service.";
+    public const string InstallerProductOpcUaEndpointUnavailableWarningLog = "The service started, but OPC UA endpoint {Endpoint} did not become available. Check settings.json, hardware, and the service log.";
+    public const string InstallerProductOpcUaServiceLeftStoppedLog = "Prompribor OPC UA verification completed. The service is installed and left stopped.";
+    public const string InstallerProductOpcUaSettingsNotFound = "The Prompribor OPC UA settings file was not found: {Path}";
+    public const string InstallerProductOpcUaSettingsInstalledLog = "The Prompribor OPC UA settings file was installed: {Path}";
+    public const string InstallerProductOpcUaSettingsPreservedLog = "The existing Prompribor OPC UA settings file was preserved unchanged: {Path}";
     public const string InstallerWizardOperation = "PostgreSQL GUI installer";
     public const string InstallerCheckOperation = "PostgreSQL check";
     public const string InstallerCompletedStatus = "Operation completed";
