@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Net.Sockets;
@@ -350,11 +351,17 @@ public sealed class ProductApplicationInstaller
                     return 0;
                 }
 
-                log($"Privilege elevation helper {helper.FileName} failed with exit code {process.ExitCode}. Trying next helper.");
+                log(Format(
+                    AppStrings.InstallerProductPrivilegeHelperFailedLog,
+                    ("Tool", helper.FileName),
+                    ("ExitCode", process.ExitCode.ToString())));
             }
             catch (Exception ex) when (ex is System.ComponentModel.Win32Exception or InvalidOperationException)
             {
-                log($"Privilege elevation helper {helper.FileName} failed: {ex.Message}");
+                log(Format(
+                    AppStrings.InstallerProductPrivilegeHelperErrorLog,
+                    ("Tool", helper.FileName),
+                    ("Message", ex.Message)));
             }
         }
 
@@ -401,6 +408,8 @@ public sealed class ProductApplicationInstaller
         {
             startInfo.ArgumentList.Add(argument);
         }
+
+        ProcessLanguageEnvironment.Apply(startInfo);
 
         return startInfo;
     }
@@ -789,6 +798,25 @@ public sealed class ProductApplicationInstaller
             startInfo.ArgumentList.Add(argument);
         }
 
+        ProcessLanguageEnvironment.Apply(startInfo);
+
+        var isWindowsServiceControl = OperatingSystem.IsWindows()
+            && string.Equals(Path.GetFileName(fileName), "sc.exe", StringComparison.OrdinalIgnoreCase);
+        if (isWindowsServiceControl)
+        {
+            try
+            {
+                Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
+                var encoding = Encoding.GetEncoding(CultureInfo.CurrentCulture.TextInfo.OEMCodePage);
+                startInfo.StandardOutputEncoding = encoding;
+                startInfo.StandardErrorEncoding = encoding;
+            }
+            catch (ArgumentException)
+            {
+                // The default encoding remains available as a diagnostic fallback.
+            }
+        }
+
         var prefix = $"[{Path.GetFileNameWithoutExtension(fileName).ToLowerInvariant()}]";
         log($"{prefix} > {fileName} {string.Join(" ", arguments)}");
         using var process = Process.Start(startInfo)
@@ -800,14 +828,21 @@ public sealed class ProductApplicationInstaller
 
         var output = outputTask.Result;
         var error = errorTask.Result;
+        var suppressSuccessfulSystemOutput = isWindowsServiceControl && process.ExitCode == 0;
         foreach (var line in output.Split(Environment.NewLine, StringSplitOptions.RemoveEmptyEntries))
         {
-            log($"{prefix} {line}");
+            if (!suppressSuccessfulSystemOutput)
+            {
+                log($"{prefix} {line}");
+            }
         }
 
         foreach (var line in error.Split(Environment.NewLine, StringSplitOptions.RemoveEmptyEntries))
         {
-            log($"{prefix} {line}");
+            if (!suppressSuccessfulSystemOutput)
+            {
+                log($"{prefix} {line}");
+            }
         }
 
         return new ProcessExecutionResult(process.ExitCode, output, error);

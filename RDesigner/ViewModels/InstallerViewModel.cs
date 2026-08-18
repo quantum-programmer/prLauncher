@@ -24,6 +24,7 @@ public partial class InstallerViewModel : ViewModelBase
     private readonly object logLock = new();
     private readonly StringBuilder logBuilder = new();
     private Func<string> statusProvider = () => AppStrings.InstallerReadyStatus;
+    private int languageSelectionLockCount;
 
     [ObservableProperty]
     [NotifyCanExecuteChangedFor(nameof(InstallPostgresCommand))]
@@ -73,6 +74,8 @@ public partial class InstallerViewModel : ViewModelBase
     public bool IsWindows => OperatingSystem.IsWindows();
 
     public bool IsLinux => OperatingSystem.IsLinux();
+
+    public bool IsLanguageSelectionEnabled => languageSelectionLockCount == 0;
 
     public InstallerViewModel(
         NativePostgresInstaller installer,
@@ -128,6 +131,19 @@ public partial class InstallerViewModel : ViewModelBase
 
     [RelayCommand(CanExecute = nameof(CanRun))]
     private async Task InstallArmAsync()
+    {
+        LockLanguageSelection();
+        try
+        {
+            await InstallArmCoreAsync();
+        }
+        finally
+        {
+            UnlockLanguageSelection();
+        }
+    }
+
+    private async Task InstallArmCoreAsync()
     {
         ApplicationInstallResult? installResult = null;
         var installCompleted = false;
@@ -398,6 +414,7 @@ public partial class InstallerViewModel : ViewModelBase
 
     private async Task RunAsync(Func<string> operationNameProvider, Func<Action<string>, Task> operation)
     {
+        LockLanguageSelection();
         IsBusy = true;
         SetStatus(operationNameProvider);
         var operationName = operationNameProvider();
@@ -427,7 +444,24 @@ public partial class InstallerViewModel : ViewModelBase
         finally
         {
             IsBusy = false;
+            UnlockLanguageSelection();
         }
+    }
+
+    private void LockLanguageSelection()
+    {
+        languageSelectionLockCount++;
+        OnPropertyChanged(nameof(IsLanguageSelectionEnabled));
+    }
+
+    private void UnlockLanguageSelection()
+    {
+        if (languageSelectionLockCount > 0)
+        {
+            languageSelectionLockCount--;
+        }
+
+        OnPropertyChanged(nameof(IsLanguageSelectionEnabled));
     }
 
     private void AppendLog(string message)

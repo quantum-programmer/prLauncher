@@ -36,6 +36,7 @@ public sealed class NativePostgresInstaller
     private const string OilCtrlAdministratorDisplayName = "Администратор";
 
     private static readonly Encoding Utf8NoBom = new UTF8Encoding(false);
+    private static readonly Encoding Utf8WithBom = new UTF8Encoding(true);
     private static readonly string[] OilCtrlApplicationRoles = ["reader", "operator", "master", "configurator", "admin"];
     private const string LinuxClusterNamePrefix = "oilctrl";
     private const string LinuxPostgresVersion = "16";
@@ -638,21 +639,12 @@ public sealed class NativePostgresInstaller
             backupDirectory,
             logPath);
 
-        var result = await RunProcessAsync(
+        var result = await RunElevatedProcessWithLogAsync(
             fileName,
             arguments.ToArray(),
+            logPath,
             log,
-            cancellationToken,
-            runAsAdmin: true,
-            throwOnError: false);
-
-        if (File.Exists(logPath))
-        {
-            foreach (var line in File.ReadLines(logPath, Encoding.UTF8))
-            {
-                log(line);
-            }
-        }
+            cancellationToken);
 
         TryDeleteFile(logPath);
 
@@ -731,7 +723,7 @@ public sealed class NativePostgresInstaller
                 RunProcessAsync(
                         "sc.exe",
                         new[] { "start", serviceName },
-                        log,
+                        CreateCommandOnlyLogger(log, "sc.exe"),
                         CancellationToken.None,
                         throwOnError: false,
                         outputEncoding: GetWindowsOemEncoding())
@@ -748,13 +740,23 @@ public sealed class NativePostgresInstaller
             if (!serverRunning && File.Exists(pgCtlPath) && Directory.Exists(dataDirectory))
             {
                 log(AppStrings.InstallerWindowsPostgresManualStartForBackupLog);
+                var serverLogPath = Path.Combine(dataDirectory, "pyramid-backup-postgres.log");
+                TryDeleteFile(serverLogPath);
                 var startResult = RunProcessAsync(
                         pgCtlPath,
-                        new[] { "start", "-D", dataDirectory, "-w", "-t", "30" },
+                        new[]
+                        {
+                            "start",
+                            "-D", dataDirectory,
+                            "-l", serverLogPath,
+                            "-w",
+                            "-t", "30"
+                        },
                         log,
                         CancellationToken.None,
                         throwOnError: false,
-                        outputEncoding: GetWindowsOemEncoding())
+                        outputEncoding: GetWindowsOemEncoding(),
+                        redirectOutput: false)
                     .GetAwaiter()
                     .GetResult();
                 serverRunning = startResult.ExitCode == 0;
@@ -855,10 +857,10 @@ public sealed class NativePostgresInstaller
                 RunProcessAsync(
                         "sc.exe",
                         new[] { "stop", serviceName },
-                        log,
+                        CreateCommandOnlyLogger(log, "sc.exe"),
                         CancellationToken.None,
                         throwOnError: false,
-                        outputEncoding: GetWindowsAnsiEncoding())
+                        outputEncoding: GetWindowsOemEncoding())
                     .GetAwaiter()
                     .GetResult();
                 WaitForWindowsServiceState(serviceName, 1, TimeSpan.FromSeconds(30));
@@ -868,7 +870,7 @@ public sealed class NativePostgresInstaller
             var deleteResult = RunProcessAsync(
                     "sc.exe",
                     new[] { "delete", serviceName },
-                    log,
+                    CreateCommandOnlyLogger(log, "sc.exe"),
                     CancellationToken.None,
                     throwOnError: false,
                     outputEncoding: GetWindowsOemEncoding())
@@ -1054,21 +1056,12 @@ public sealed class NativePostgresInstaller
             port.ToString(),
             logPath);
 
-        var result = await RunProcessAsync(
+        var result = await RunElevatedProcessWithLogAsync(
             fileName,
             arguments.ToArray(),
+            logPath,
             log,
-            cancellationToken,
-            runAsAdmin: true,
-            throwOnError: false);
-
-        if (File.Exists(logPath))
-        {
-            foreach (var line in File.ReadLines(logPath, Encoding.UTF8).TakeLast(160))
-            {
-                log(line);
-            }
-        }
+            cancellationToken);
 
         TryDeleteFile(logPath);
 
@@ -1215,30 +1208,40 @@ public sealed class NativePostgresInstaller
         log(AppStrings.InstallerRegisterServiceLog);
         var elevatedLogPath = Path.Combine(AppContext.BaseDirectory, "logs", "postgresql-service-install.log");
         Directory.CreateDirectory(Path.GetDirectoryName(elevatedLogPath)!);
+        TryDeleteFile(elevatedLogPath);
 
         var scriptPath = Path.Combine(Path.GetTempPath(), $"oilctrl-postgres-service-{Guid.NewGuid():N}.ps1");
+        var registeringServiceLog = Format(AppStrings.InstallerPowerShellRegisteringServiceLog, ("ServiceName", serviceName));
+        var grantingPermissionsLog = AppStrings.InstallerPowerShellGrantingNetworkServiceLog;
+        var startingServiceLog = Format(AppStrings.InstallerPowerShellStartingServiceLog, ("ServiceName", serviceName));
+        var serviceStatusLog = Format(AppStrings.InstallerPowerShellServiceStatusLog, ("Status", "$($service.Status)"));
+        var serviceStartedLog = Format(AppStrings.InstallerPowerShellServiceStartedLog, ("ServiceName", serviceName));
         var script = $$"""
             $ErrorActionPreference = 'Stop'
             $log = '{{EscapePowerShellSingleQuotedString(elevatedLogPath)}}'
-            "Registering service {{serviceName}}" | Out-File -FilePath $log -Encoding utf8
-            "Granting NetworkService permissions" | Out-File -FilePath $log -Encoding utf8 -Append
+            '{{EscapePowerShellSingleQuotedString(registeringServiceLog)}}' | Out-File -FilePath $log -Encoding utf8
+            '{{EscapePowerShellSingleQuotedString(grantingPermissionsLog)}}' | Out-File -FilePath $log -Encoding utf8 -Append
             $icaclsOutput = & icacls '{{EscapePowerShellSingleQuotedString(installDir)}}' /grant 'NT AUTHORITY\NetworkService:(OI)(CI)F' /T /Q 2>&1
             $icaclsExitCode = $LASTEXITCODE
-            $icaclsOutput | Out-File -FilePath $log -Encoding utf8 -Append
-            if ($icaclsExitCode -ne 0) { throw "icacls failed with exit code $icaclsExitCode" }
+            if ($icaclsExitCode -ne 0) {
+                $icaclsOutput | Out-File -FilePath $log -Encoding utf8 -Append
+                throw "icacls failed with exit code $icaclsExitCode"
+            }
             $registerOutput = & '{{EscapePowerShellSingleQuotedString(pgCtlPath)}}' register -N '{{EscapePowerShellSingleQuotedString(serviceName)}}' -D '{{EscapePowerShellSingleQuotedString(dataDir)}}' -S auto -U 'NT AUTHORITY\NetworkService' 2>&1
             $registerExitCode = $LASTEXITCODE
             $registerOutput | Out-File -FilePath $log -Encoding utf8 -Append
             if ($registerExitCode -ne 0) { throw "pg_ctl register failed with exit code $registerExitCode" }
-            "Starting service {{serviceName}}" | Out-File -FilePath $log -Encoding utf8 -Append
+            '{{EscapePowerShellSingleQuotedString(startingServiceLog)}}' | Out-File -FilePath $log -Encoding utf8 -Append
             Start-Service -Name '{{EscapePowerShellSingleQuotedString(serviceName)}}'
             $service = Get-Service -Name '{{EscapePowerShellSingleQuotedString(serviceName)}}'
             $service.WaitForStatus('Running', '00:00:30')
-            "Service status: $($service.Status)" | Out-File -FilePath $log -Encoding utf8 -Append
-            "Service {{serviceName}} started" | Out-File -FilePath $log -Encoding utf8 -Append
+            "{{EscapePowerShellSingleQuotedString(serviceStatusLog)}}" | Out-File -FilePath $log -Encoding utf8 -Append
+            '{{EscapePowerShellSingleQuotedString(serviceStartedLog)}}' | Out-File -FilePath $log -Encoding utf8 -Append
             """;
 
-        await File.WriteAllTextAsync(scriptPath, script, Utf8NoBom, cancellationToken);
+        // Windows PowerShell 5.1 requires a BOM to recognize UTF-8 scripts
+        // containing localized non-ASCII text.
+        await File.WriteAllTextAsync(scriptPath, script, Utf8WithBom, cancellationToken);
 
         try
         {
@@ -1248,7 +1251,8 @@ public sealed class NativePostgresInstaller
                 log,
                 cancellationToken,
                 runAsAdmin: runAsAdmin,
-                throwOnError: false);
+                throwOnError: false,
+                outputEncoding: GetWindowsOemEncoding());
 
             if (File.Exists(elevatedLogPath))
             {
@@ -1498,19 +1502,22 @@ public sealed class NativePostgresInstaller
 
         var elevatedLogPath = Path.Combine(AppContext.BaseDirectory, "logs", "postgresql-service-start.log");
         Directory.CreateDirectory(Path.GetDirectoryName(elevatedLogPath)!);
+        TryDeleteFile(elevatedLogPath);
 
         var scriptPath = Path.Combine(Path.GetTempPath(), $"oilctrl-postgres-start-{Guid.NewGuid():N}.ps1");
+        var startingServiceLog = Format(AppStrings.InstallerPowerShellStartingServiceLog, ("ServiceName", serviceName));
+        var serviceStatusLog = Format(AppStrings.InstallerPowerShellServiceStatusLog, ("Status", "$($service.Status)"));
         var script = $$"""
             $ErrorActionPreference = 'Stop'
             $log = '{{EscapePowerShellSingleQuotedString(elevatedLogPath)}}'
-            "Starting service {{serviceName}}" | Out-File -FilePath $log -Encoding utf8
+            '{{EscapePowerShellSingleQuotedString(startingServiceLog)}}' | Out-File -FilePath $log -Encoding utf8
             Start-Service -Name '{{EscapePowerShellSingleQuotedString(serviceName)}}'
             $service = Get-Service -Name '{{EscapePowerShellSingleQuotedString(serviceName)}}'
             $service.WaitForStatus('Running', '00:00:30')
-            "Service status: $($service.Status)" | Out-File -FilePath $log -Encoding utf8 -Append
+            "{{EscapePowerShellSingleQuotedString(serviceStatusLog)}}" | Out-File -FilePath $log -Encoding utf8 -Append
             """;
 
-        await File.WriteAllTextAsync(scriptPath, script, Utf8NoBom, cancellationToken);
+        await File.WriteAllTextAsync(scriptPath, script, Utf8WithBom, cancellationToken);
 
         try
         {
@@ -1520,7 +1527,8 @@ public sealed class NativePostgresInstaller
                 log,
                 cancellationToken,
                 runAsAdmin: true,
-                throwOnError: false);
+                throwOnError: false,
+                outputEncoding: GetWindowsOemEncoding());
 
             log(Format(AppStrings.InstallerServiceStartLog, ("Path", elevatedLogPath)));
 
@@ -2264,7 +2272,8 @@ public sealed class NativePostgresInstaller
     private static async Task RunLinuxPrivilegedScriptAsync(string script, Action<string> log, CancellationToken cancellationToken)
     {
         var scriptPath = Path.Combine(Path.GetTempPath(), $"oilctrl-postgres-linux-{Guid.NewGuid():N}.sh");
-        await File.WriteAllTextAsync(scriptPath, script.ReplaceLineEndings("\n"), Utf8NoBom, cancellationToken);
+        var localizedScript = ProcessLanguageEnvironment.CreateShellPreamble() + "\n" + script;
+        await File.WriteAllTextAsync(scriptPath, localizedScript.ReplaceLineEndings("\n"), Utf8NoBom, cancellationToken);
 
         try
         {
@@ -2478,6 +2487,18 @@ public sealed class NativePostgresInstaller
             && Directory.Exists(Path.Combine(directory, "R_Designer_L"));
     }
 
+    private static Action<string> CreateCommandOnlyLogger(Action<string> log, string fileName)
+    {
+        var commandPrefix = $"{GetProcessLogPrefix(fileName)} >";
+        return message =>
+        {
+            if (message.StartsWith(commandPrefix, StringComparison.Ordinal))
+            {
+                log(message);
+            }
+        };
+    }
+
     private static async Task<ProcessResult> RunProcessAsync(
         string fileName,
         IReadOnlyList<string> arguments,
@@ -2486,19 +2507,21 @@ public sealed class NativePostgresInstaller
         IReadOnlyDictionary<string, string>? environment = null,
         bool runAsAdmin = false,
         bool throwOnError = true,
-        Encoding? outputEncoding = null)
+        Encoding? outputEncoding = null,
+        bool redirectOutput = true)
     {
+        var captureOutput = !runAsAdmin && redirectOutput;
         var startInfo = new ProcessStartInfo
         {
             FileName = fileName,
             UseShellExecute = runAsAdmin,
             Verb = runAsAdmin && OperatingSystem.IsWindows() ? "runas" : string.Empty,
-            RedirectStandardOutput = !runAsAdmin,
-            RedirectStandardError = !runAsAdmin,
+            RedirectStandardOutput = captureOutput,
+            RedirectStandardError = captureOutput,
             CreateNoWindow = !runAsAdmin
         };
 
-        if (!runAsAdmin && outputEncoding is not null)
+        if (captureOutput && outputEncoding is not null)
         {
             startInfo.StandardOutputEncoding = outputEncoding;
             startInfo.StandardErrorEncoding = outputEncoding;
@@ -2517,6 +2540,8 @@ public sealed class NativePostgresInstaller
             }
         }
 
+        ProcessLanguageEnvironment.Apply(startInfo);
+
         var processLogPrefix = GetProcessLogPrefix(fileName);
         log($"{processLogPrefix} > {fileName} {string.Join(" ", arguments.Select(MaskSensitiveArgument))}");
 
@@ -2524,7 +2549,7 @@ public sealed class NativePostgresInstaller
         var output = new StringBuilder();
         var errors = new StringBuilder();
 
-        if (!runAsAdmin)
+        if (captureOutput)
         {
             process.OutputDataReceived += (_, e) =>
             {
@@ -2542,14 +2567,14 @@ public sealed class NativePostgresInstaller
 
         process.Start();
 
-        if (!runAsAdmin)
+        if (captureOutput)
         {
             process.BeginOutputReadLine();
             process.BeginErrorReadLine();
         }
 
         await process.WaitForExitAsync(cancellationToken);
-        if (!runAsAdmin)
+        if (captureOutput)
         {
             process.WaitForExit();
         }
@@ -2565,6 +2590,59 @@ public sealed class NativePostgresInstaller
         }
 
         return result;
+    }
+
+    private static async Task<ProcessResult> RunElevatedProcessWithLogAsync(
+        string fileName,
+        IReadOnlyList<string> arguments,
+        string logPath,
+        Action<string> log,
+        CancellationToken cancellationToken)
+    {
+        var emittedLineCount = 0;
+        var processTask = RunProcessAsync(
+            fileName,
+            arguments,
+            log,
+            cancellationToken,
+            runAsAdmin: true,
+            throwOnError: false);
+
+        while (!processTask.IsCompleted)
+        {
+            emittedLineCount = LogNewMaintenanceLines(logPath, emittedLineCount, log);
+            await Task.WhenAny(processTask, Task.Delay(250, cancellationToken));
+        }
+
+        var result = await processTask;
+        LogNewMaintenanceLines(logPath, emittedLineCount, log);
+        return result;
+    }
+
+    private static int LogNewMaintenanceLines(
+        string logPath,
+        int emittedLineCount,
+        Action<string> log)
+    {
+        if (!File.Exists(logPath))
+        {
+            return emittedLineCount;
+        }
+
+        try
+        {
+            var lines = File.ReadAllLines(logPath, Encoding.UTF8);
+            foreach (var line in lines.Skip(emittedLineCount))
+            {
+                log(line);
+            }
+
+            return lines.Length;
+        }
+        catch (IOException)
+        {
+            return emittedLineCount;
+        }
     }
 
     private static void LogInstallerTrace(Action<string> log)

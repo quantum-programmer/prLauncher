@@ -309,6 +309,7 @@ namespace Pyramid
                 Enum.IsDefined(language))
             {
                 LocalizationManager.UseLanguage(language);
+                ProcessLanguageEnvironment.ApplyToCurrentProcess();
             }
 
             return args.Skip(2).ToArray();

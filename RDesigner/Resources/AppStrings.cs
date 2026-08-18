@@ -64,6 +64,8 @@ public static class AppStrings
     public static string InstallerProductWindowsCopyRequiresAdminLog = "Копирование приложений в C:\\Prompribor. Требуются права администратора.";
     public static string InstallerProductLinuxCopyRequiresAdminLog = "Копирование приложений в /opt/prompribor. Требуются права администратора.";
     public static string InstallerProductElevatedHelperStartFailed = "Не удалось запустить elevated helper для установки приложений.";
+    public static string InstallerProductPrivilegeHelperFailedLog = "Средство повышения прав {Tool} завершилось с кодом {ExitCode}. Пробуется следующее средство.";
+    public static string InstallerProductPrivilegeHelperErrorLog = "Не удалось запустить средство повышения прав {Tool}: {Message}";
     public static string InstallerProductInstallFailedWithExitCode = "Установка приложений завершилась с кодом {ExitCode}.";
     public static string InstallerProductCurrentExecutableNotFound = "Путь текущего приложения не найден.";
     public static string InstallerProductSharedSettingsMissingLog = "Общий appsettings.json в поставочной сборке не найден. Pyramid создаст/обновит его после настройки PostgreSQL.";
@@ -231,6 +233,11 @@ public static class AppStrings
     public static string InstallerConfigNotFound = "postgresql.conf не найден: {Path}";
     public static string InstallerConfiguringPostgresLog = "Настройка порта PostgreSQL и listen address...";
     public static string InstallerRegisterServiceLog = "Регистрация и запуск службы PostgreSQL Windows. Требуются права администратора.";
+    public static string InstallerPowerShellRegisteringServiceLog = "Регистрация службы {ServiceName}";
+    public static string InstallerPowerShellGrantingNetworkServiceLog = "Назначение прав учетной записи NetworkService";
+    public static string InstallerPowerShellStartingServiceLog = "Запуск службы {ServiceName}";
+    public static string InstallerPowerShellServiceStatusLog = "Состояние службы: {Status}";
+    public static string InstallerPowerShellServiceStartedLog = "Служба {ServiceName} запущена";
     public static string InstallerServiceInstallationLog = "Лог установки службы: {Path}";
     public static string InstallerServiceRegistrationFailed = "Регистрация службы PostgreSQL завершилась с кодом {ExitCode}.";
     public static string InstallerExistingServicesNotFoundLog = "Существующие службы PostgreSQL Windows не найдены.";

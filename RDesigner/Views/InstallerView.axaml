@@ -256,23 +256,46 @@
                   Height="34"
                   Padding="8 0"
                   Cursor="Hand"
+                  IsEnabled="{Binding IsLanguageSelectionEnabled}"
                   ZIndex="10">
             <ComboBoxItem Tag="Russian">
                 <StackPanel Orientation="Horizontal" Spacing="8">
-                    <TextBlock Text="🇷🇺"
-                               Width="22"
-                               FontSize="16"
-                               VerticalAlignment="Center" />
+                    <Border Width="24"
+                            Height="16"
+                            BorderBrush="#A0A0A0"
+                            BorderThickness="0.5"
+                            VerticalAlignment="Center">
+                        <Grid RowDefinitions="*,*,*">
+                            <Border Background="White" />
+                            <Border Grid.Row="1" Background="#1C57A7" />
+                            <Border Grid.Row="2" Background="#D52B1E" />
+                        </Grid>
+                    </Border>
                     <TextBlock Text="русский"
                                VerticalAlignment="Center" />
                 </StackPanel>
             </ComboBoxItem>
             <ComboBoxItem Tag="English">
                 <StackPanel Orientation="Horizontal" Spacing="8">
-                    <TextBlock Text="🇬🇧"
-                               Width="22"
-                               FontSize="16"
-                               VerticalAlignment="Center" />
+                    <Border Width="24"
+                            Height="16"
+                            BorderBrush="#A0A0A0"
+                            BorderThickness="0.5"
+                            VerticalAlignment="Center"
+                            ClipToBounds="True">
+                        <Viewbox Stretch="Fill">
+                            <Canvas Width="30" Height="20" Background="#012169">
+                                <Path Fill="White" Data="M 0,0 L 4,0 L 30,17 L 30,20 L 26,20 L 0,3 Z" />
+                                <Path Fill="White" Data="M 26,0 L 30,0 L 30,3 L 4,20 L 0,20 L 0,17 Z" />
+                                <Path Fill="#C8102E" Data="M 0,0 L 2,0 L 30,18 L 30,20 L 28,20 L 0,2 Z" />
+                                <Path Fill="#C8102E" Data="M 28,0 L 30,0 L 30,2 L 2,20 L 0,20 L 0,18 Z" />
+                                <Rectangle Width="30" Height="6" Fill="White" Canvas.Top="7" />
+                                <Rectangle Width="8" Height="20" Fill="White" Canvas.Left="11" />
+                                <Rectangle Width="30" Height="3" Fill="#C8102E" Canvas.Top="8.5" />
+                                <Rectangle Width="4" Height="20" Fill="#C8102E" Canvas.Left="13" />
+                            </Canvas>
+                        </Viewbox>
+                    </Border>
                     <TextBlock Text="english"
                                VerticalAlignment="Center" />
                 </StackPanel>

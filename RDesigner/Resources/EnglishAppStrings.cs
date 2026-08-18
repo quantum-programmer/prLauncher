@@ -64,6 +64,8 @@ public static class EnglishAppStrings
     public const string InstallerProductWindowsCopyRequiresAdminLog = "Copying applications to C:\\Prompribor. Administrator privileges are required.";
     public const string InstallerProductLinuxCopyRequiresAdminLog = "Copying applications to /opt/prompribor. Administrator privileges are required.";
     public const string InstallerProductElevatedHelperStartFailed = "Could not start the elevated helper for application installation.";
+    public const string InstallerProductPrivilegeHelperFailedLog = "Privilege elevation helper {Tool} failed with exit code {ExitCode}. Trying the next helper.";
+    public const string InstallerProductPrivilegeHelperErrorLog = "Could not start privilege elevation helper {Tool}: {Message}";
     public const string InstallerProductInstallFailedWithExitCode = "Application installation finished with exit code {ExitCode}.";
     public const string InstallerProductCurrentExecutableNotFound = "Current application executable path was not found.";
     public const string InstallerProductSharedSettingsMissingLog = "Shared appsettings.json was not found in the product bundle. Pyramid will create/update it after PostgreSQL configuration.";
@@ -231,6 +233,11 @@ public static class EnglishAppStrings
     public const string InstallerConfigNotFound = "postgresql.conf was not found: {Path}";
     public const string InstallerConfiguringPostgresLog = "Configuring PostgreSQL port and listen address...";
     public const string InstallerRegisterServiceLog = "Registering and starting PostgreSQL Windows service. Administrator privileges are required.";
+    public const string InstallerPowerShellRegisteringServiceLog = "Registering service {ServiceName}";
+    public const string InstallerPowerShellGrantingNetworkServiceLog = "Granting NetworkService permissions";
+    public const string InstallerPowerShellStartingServiceLog = "Starting service {ServiceName}";
+    public const string InstallerPowerShellServiceStatusLog = "Service status: {Status}";
+    public const string InstallerPowerShellServiceStartedLog = "Service {ServiceName} started";
     public const string InstallerServiceInstallationLog = "Service installation log: {Path}";
     public const string InstallerServiceRegistrationFailed = "PostgreSQL service registration failed with exit code {ExitCode}.";
     public const string InstallerExistingServicesNotFoundLog = "Existing PostgreSQL Windows services were not found.";

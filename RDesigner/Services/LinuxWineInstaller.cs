@@ -323,6 +323,7 @@ public sealed class LinuxWineInstaller
                 CreateNoWindow = true
             };
             startInfo.ArgumentList.Add("--version");
+            ProcessLanguageEnvironment.Apply(startInfo);
 
             using var process = Process.Start(startInfo);
             if (process is null)
@@ -361,6 +362,8 @@ public sealed class LinuxWineInstaller
         {
             startInfo.ArgumentList.Add(argument);
         }
+
+        ProcessLanguageEnvironment.Apply(startInfo);
 
         using var process = Process.Start(startInfo)
             ?? throw new InvalidOperationException($"Could not start {fileName}.");
@@ -432,6 +435,8 @@ public sealed class LinuxWineInstaller
         {
             startInfo.ArgumentList.Add(argument);
         }
+
+        ProcessLanguageEnvironment.Apply(startInfo);
 
         return startInfo;
     }

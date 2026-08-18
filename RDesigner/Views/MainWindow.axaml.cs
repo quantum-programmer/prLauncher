@@ -6,6 +6,7 @@ using System.Diagnostics;
 using System.IO;
 using System.Runtime.InteropServices;
 using Pyramid.Resources;
+using Pyramid.ViewModels;
 
 namespace Pyramid.Views
 {
@@ -31,6 +32,14 @@ namespace Pyramid.Views
             {
                 e.Handled = true;
                 OpenLogsDirectory();
+                return;
+            }
+
+            if (e.Key == Key.U &&
+                e.KeyModifiers.HasFlag(KeyModifiers.Control) &&
+                Content is Control { DataContext: InstallerViewModel { IsLanguageSelectionEnabled: false } })
+            {
+                e.Handled = true;
                 return;
             }
 
