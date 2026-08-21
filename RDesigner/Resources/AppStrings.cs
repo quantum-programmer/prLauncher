@@ -224,6 +224,17 @@ public static class AppStrings
     public static string InstallerWinePrivilegeToolNotFound = "Не найдено средство повышения прав fly-su или pkexec. Установка Wine требует прав администратора.";
     public static string InstallerWineInstallFailedWithExitCode = "Установка Wine завершилась с кодом {ExitCode}.";
     public static string InstallerWineCurrentExecutableNotFound = "Не удалось определить путь к текущему исполняемому файлу Pyramid.";
+    public static string InstallerCupsCheckingLog = "Проверяется наличие клиента печати CUPS.";
+    public static string InstallerCupsAlreadyInstalledLog = "Клиент печати CUPS уже установлен.";
+    public static string InstallerCupsPackagesDirectoryLog = "Офлайн-пакеты CUPS: {Directory}";
+    public static string InstallerCupsPackagesDirectoryNotFound = "Папка с офлайн-пакетами CUPS не найдена: {Directory}";
+    public static string InstallerCupsPackageSetInvalid = "Для CUPS должен находиться ровно один пакет по шаблону {Pattern}.";
+    public static string InstallerCupsInstallRequiresAdminLog = "Установка клиента печати CUPS из офлайн-пакетов. Требуются права администратора.";
+    public static string InstallerCupsInstallingLog = "Устанавливаются офлайн-пакеты клиента печати CUPS.";
+    public static string InstallerCupsDpkgFailed = "Установка клиента печати CUPS завершилась с кодом {ExitCode}.";
+    public static string InstallerCupsInstallFailed = "Привилегированный процесс установки CUPS завершился с кодом {ExitCode}.";
+    public static string InstallerCupsVerificationFailed = "После установки команды lp и lpstat не найдены.";
+    public static string InstallerCupsInstallCompletedLog = "Установка клиента печати CUPS завершена.";
     public static string InstallerExtractingBinariesLog = "Распаковка PostgreSQL binaries...";
     public static string InstallerUnsafeArchiveEntry = "Небезопасный путь внутри архива: {Entry}";
     public static string InstallerExtractedFilesLog = "Распаковано файлов: {Count}...";

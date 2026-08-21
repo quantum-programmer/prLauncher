@@ -224,6 +224,17 @@ public static class EnglishAppStrings
     public const string InstallerWinePrivilegeToolNotFound = "Neither fly-su nor pkexec was found. Wine installation requires administrator privileges.";
     public const string InstallerWineInstallFailedWithExitCode = "Wine installation finished with exit code {ExitCode}.";
     public const string InstallerWineCurrentExecutableNotFound = "The current Pyramid executable path could not be determined.";
+    public const string InstallerCupsCheckingLog = "Checking for the CUPS print client.";
+    public const string InstallerCupsAlreadyInstalledLog = "The CUPS print client is already installed.";
+    public const string InstallerCupsPackagesDirectoryLog = "Offline CUPS packages: {Directory}";
+    public const string InstallerCupsPackagesDirectoryNotFound = "The offline CUPS package folder was not found: {Directory}";
+    public const string InstallerCupsPackageSetInvalid = "Exactly one CUPS package matching {Pattern} must be present.";
+    public const string InstallerCupsInstallRequiresAdminLog = "Installing the CUPS print client from offline packages. Administrator privileges are required.";
+    public const string InstallerCupsInstallingLog = "Installing offline CUPS print client packages.";
+    public const string InstallerCupsDpkgFailed = "CUPS print client installation failed with exit code {ExitCode}.";
+    public const string InstallerCupsInstallFailed = "The privileged CUPS installation process failed with exit code {ExitCode}.";
+    public const string InstallerCupsVerificationFailed = "The lp and lpstat commands were not found after installation.";
+    public const string InstallerCupsInstallCompletedLog = "CUPS print client installation completed.";
     public const string InstallerExtractingBinariesLog = "Extracting PostgreSQL binaries...";
     public const string InstallerUnsafeArchiveEntry = "Unsafe archive entry path: {Entry}";
     public const string InstallerExtractedFilesLog = "Extracted {Count} files...";

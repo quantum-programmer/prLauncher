@@ -10,6 +10,7 @@ public class Startup
     {
         services.AddSingleton<NativePostgresInstaller>();
         services.AddSingleton<LinuxWineInstaller>();
+        services.AddSingleton<LinuxCupsClientInstaller>();
         services.AddSingleton<ProductApplicationInstaller>();
 
         services.AddTransient<InstallerViewModel>();

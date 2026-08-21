@@ -39,9 +39,9 @@
   <ItemGroup>
     <None Include="..\appsettings.json" Link="appsettings.json" CopyToOutputDirectory="PreserveNewest" />
     <None Include="Installers\**"
-          Exclude="Installers\packages\wine\**"
+          Exclude="Installers\packages\wine\**;Installers\packages\cups\**"
           CopyToOutputDirectory="PreserveNewest" />
-    <None Include="Installers\packages\wine\**"
+    <None Include="Installers\packages\wine\**;Installers\packages\cups\**"
           Condition="'$(RuntimeIdentifier)' != 'win-x64'"
           CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>

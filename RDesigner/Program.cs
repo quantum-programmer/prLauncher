@@ -253,6 +253,41 @@ namespace Pyramid
                 }
             }
 
+            if (args.Length == 3 &&
+                string.Equals(args[0], "--pyramid-install-cups-client", StringComparison.Ordinal))
+            {
+                try
+                {
+                    var packagesDirectory = args[1];
+                    var logPath = args[2];
+                    Directory.CreateDirectory(Path.GetDirectoryName(logPath)!);
+
+                    using var writer = new StreamWriter(logPath, append: false, Encoding.UTF8);
+                    LinuxCupsClientInstaller.InstallFromPackages(
+                        packagesDirectory,
+                        message =>
+                        {
+                            writer.WriteLine(message);
+                            writer.Flush();
+                        });
+                    return true;
+                }
+                catch (Exception ex)
+                {
+                    try
+                    {
+                        File.AppendAllText(args[2], ex.Message + Environment.NewLine, Encoding.UTF8);
+                    }
+                    catch
+                    {
+                        // Nothing else can be reported from the maintenance process.
+                    }
+
+                    exitCode = 1;
+                    return true;
+                }
+            }
+
             if (args.Length == 6 &&
                 string.Equals(args[0], "--pyramid-install-applications", StringComparison.Ordinal))
             {

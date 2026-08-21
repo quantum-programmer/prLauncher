@@ -20,6 +20,7 @@ public partial class InstallerViewModel : ViewModelBase
 {
     private readonly NativePostgresInstaller installer;
     private readonly LinuxWineInstaller wineInstaller;
+    private readonly LinuxCupsClientInstaller cupsClientInstaller;
     private readonly ProductApplicationInstaller applicationInstaller;
     private readonly object logLock = new();
     private readonly StringBuilder logBuilder = new();
@@ -80,10 +81,12 @@ public partial class InstallerViewModel : ViewModelBase
     public InstallerViewModel(
         NativePostgresInstaller installer,
         LinuxWineInstaller wineInstaller,
+        LinuxCupsClientInstaller cupsClientInstaller,
         ProductApplicationInstaller applicationInstaller)
     {
         this.installer = installer;
         this.wineInstaller = wineInstaller;
+        this.cupsClientInstaller = cupsClientInstaller;
         this.applicationInstaller = applicationInstaller;
         LocalizationManager.LanguageChanged += OnLanguageChanged;
         SetStatus(() => AppStrings.InstallerReadyStatus);
@@ -171,6 +174,7 @@ public partial class InstallerViewModel : ViewModelBase
             {
                 var postgresPort = await installer.InstallAsync(WindowsInstallDirectory, log, reinstallExisting);
                 await wineInstaller.InstallAsync(log, ConfirmReinstallWineAsync);
+                await cupsClientInstaller.EnsureInstalledAsync(log);
                 installResult = await applicationInstaller.InstallAsync(postgresPort, reinstallExisting, log);
                 installCompleted = true;
             });
