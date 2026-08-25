@@ -81,6 +81,8 @@
       <ASNCtrlLinuxPublishRoot>$(MSBuildProjectDirectory)\..\..\..\ASNCtrl_Linux\publish\$(SelfContainedPublishFolderName)</ASNCtrlLinuxPublishRoot>
       <RDesignerLProject>$(MSBuildProjectDirectory)\..\..\R_Designer_L\RDesigner\RDesigner.csproj</RDesignerLProject>
       <RDesignerLPublishRoot>$(MSBuildProjectDirectory)\..\..\R_Designer_L\publish\$(SelfContainedPublishFolderName)</RDesignerLPublishRoot>
+      <JobSrvProject>$(MSBuildProjectDirectory)\..\..\..\JobSRV\JobSRV.csproj</JobSrvProject>
+      <JobSrvPublishRoot>$(MSBuildProjectDirectory)\..\..\..\JobSRV\publish\$(SelfContainedPublishFolderName)</JobSrvPublishRoot>
       <SelfContainedPublishProperties>-p:PublishSingleFile=false -p:PublishTrimmed=false</SelfContainedPublishProperties>
     </PropertyGroup>
 
@@ -107,6 +109,12 @@
 
     <Message Importance="High" Text="Publishing R_Designer_L self-contained $(SelfContainedPublishConfiguration) linux-x64..." />
     <Exec Command="dotnet publish &quot;$(RDesignerLProject)&quot; -c $(SelfContainedPublishConfiguration) -r linux-x64 --self-contained true $(SelfContainedPublishProperties) -o &quot;$(RDesignerLPublishRoot)\linux-x64&quot;" />
+
+    <Message Importance="High" Text="Publishing JobSRV self-contained $(SelfContainedPublishConfiguration) win-x64..." />
+    <Exec Command="dotnet publish &quot;$(JobSrvProject)&quot; -c $(SelfContainedPublishConfiguration) -r win-x64 --self-contained true $(SelfContainedPublishProperties) -o &quot;$(JobSrvPublishRoot)\win-x64&quot;" />
+
+    <Message Importance="High" Text="Publishing JobSRV self-contained $(SelfContainedPublishConfiguration) linux-x64..." />
+    <Exec Command="dotnet publish &quot;$(JobSrvProject)&quot; -c $(SelfContainedPublishConfiguration) -r linux-x64 --self-contained true $(SelfContainedPublishProperties) -o &quot;$(JobSrvPublishRoot)\linux-x64&quot;" />
   </Target>
 
   <Target Name="PublishSelfContainedSingleProductBuilds"
@@ -117,6 +125,7 @@
       <OilCtrlCfgProject>$(MSBuildProjectDirectory)\..\..\OilCtrlCfg\OilCtrlCfg\OilCtrlCfg.csproj</OilCtrlCfgProject>
       <ASNCtrlLinuxProject>$(MSBuildProjectDirectory)\..\..\..\ASNCtrl_Linux\ARM\ARM.csproj</ASNCtrlLinuxProject>
       <RDesignerLProject>$(MSBuildProjectDirectory)\..\..\R_Designer_L\RDesigner\RDesigner.csproj</RDesignerLProject>
+      <JobSrvProject>$(MSBuildProjectDirectory)\..\..\..\JobSRV\JobSRV.csproj</JobSrvProject>
       <PrompriborOpcUaPayloadRoot>$(MSBuildProjectDirectory)\..\ProductPayloads\PrompriborOPCUA</PrompriborOpcUaPayloadRoot>
       <SelfContainedPublishProperties>-p:PublishSingleFile=false -p:PublishTrimmed=false</SelfContainedPublishProperties>
     </PropertyGroup>
@@ -168,6 +177,14 @@
     <Exec Command="dotnet publish &quot;$(RDesignerLProject)&quot; -c $(SelfContainedPublishConfiguration) -r linux-x64 --self-contained true $(SelfContainedPublishProperties) -o &quot;$(SelfContainedSingleRoot)\linux-x64\$(SelfContainedSingleFolderName)\R_Designer_L&quot;" />
     <Delete Files="$(SelfContainedSingleRoot)\linux-x64\$(SelfContainedSingleFolderName)\R_Designer_L\appsettings.json" />
 
+    <Message Importance="High" Text="Publishing single bundle: JobSRV self-contained $(SelfContainedPublishConfiguration) win-x64..." />
+    <Exec Command="dotnet publish &quot;$(JobSrvProject)&quot; -c $(SelfContainedPublishConfiguration) -r win-x64 --self-contained true $(SelfContainedPublishProperties) -o &quot;$(SelfContainedSingleRoot)\win-x64\$(SelfContainedSingleFolderName)\JobSRV&quot;" />
+    <Delete Files="$(SelfContainedSingleRoot)\win-x64\$(SelfContainedSingleFolderName)\JobSRV\appsettings.json" />
+
+    <Message Importance="High" Text="Publishing single bundle: JobSRV self-contained $(SelfContainedPublishConfiguration) linux-x64..." />
+    <Exec Command="dotnet publish &quot;$(JobSrvProject)&quot; -c $(SelfContainedPublishConfiguration) -r linux-x64 --self-contained true $(SelfContainedPublishProperties) -o &quot;$(SelfContainedSingleRoot)\linux-x64\$(SelfContainedSingleFolderName)\JobSRV&quot;" />
+    <Delete Files="$(SelfContainedSingleRoot)\linux-x64\$(SelfContainedSingleFolderName)\JobSRV\appsettings.json" />
+
     <Message Importance="High" Text="Copying PrompriborOPCUA prebuilt payloads into the single bundle..." />
     <Copy SourceFiles="@(PrompriborOpcUaWindowsPayload)"
           DestinationFiles="@(PrompriborOpcUaWindowsPayload->'$(SelfContainedSingleRoot)\win-x64\$(SelfContainedSingleFolderName)\PrompriborOPCUA\%(RecursiveDir)%(Filename)%(Extension)')"
@@ -191,9 +208,11 @@
     <Delete Files="$(SelfContainedSingleRoot)\win-x64\$(SelfContainedSingleFolderName)\OilCtrlCfg\appsettings.json" />
     <Delete Files="$(SelfContainedSingleRoot)\win-x64\$(SelfContainedSingleFolderName)\ASNCtrl_Linux\appsettings.json" />
     <Delete Files="$(SelfContainedSingleRoot)\win-x64\$(SelfContainedSingleFolderName)\R_Designer_L\appsettings.json" />
+    <Delete Files="$(SelfContainedSingleRoot)\win-x64\$(SelfContainedSingleFolderName)\JobSRV\appsettings.json" />
     <Delete Files="$(SelfContainedSingleRoot)\linux-x64\$(SelfContainedSingleFolderName)\Pyramid\appsettings.json" />
     <Delete Files="$(SelfContainedSingleRoot)\linux-x64\$(SelfContainedSingleFolderName)\OilCtrlCfg\appsettings.json" />
     <Delete Files="$(SelfContainedSingleRoot)\linux-x64\$(SelfContainedSingleFolderName)\ASNCtrl_Linux\appsettings.json" />
     <Delete Files="$(SelfContainedSingleRoot)\linux-x64\$(SelfContainedSingleFolderName)\R_Designer_L\appsettings.json" />
+    <Delete Files="$(SelfContainedSingleRoot)\linux-x64\$(SelfContainedSingleFolderName)\JobSRV\appsettings.json" />
   </Target>
 </Project>

@@ -10,6 +10,7 @@ using System.Text;
 using System.Text.Encodings.Web;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 using Pyramid.Resources;
@@ -29,6 +30,11 @@ public sealed class ProductApplicationInstaller
     private const string LinuxPrompriborOpcUaConfigDirectory = "/root/.config/prompribor_opcua";
     private const string PrompriborOpcUaSettingsFileName = "settings.json";
     private const int PrompriborOpcUaPort = 4840;
+    private const string JobSrvFolderName = "JobSRV";
+    private const string WindowsJobSrvExecutable = "JobSRV.exe";
+    private const string LinuxJobSrvExecutable = "JobSRV";
+    private const string WindowsJobSrvServiceName = "JobSRV";
+    private const string LinuxJobSrvServiceName = "jobsrv.service";
 
     private static readonly ApplicationInstallItem[] Applications =
     [
@@ -38,7 +44,8 @@ public sealed class ProductApplicationInstaller
         new(
             PrompriborOpcUaFolderName,
             PrompriborOpcUaFolderName,
-            OperatingSystem.IsWindows() ? WindowsPrompriborOpcUaExecutable : LinuxPrompriborOpcUaExecutable)
+            OperatingSystem.IsWindows() ? WindowsPrompriborOpcUaExecutable : LinuxPrompriborOpcUaExecutable),
+        new(JobSrvFolderName, JobSrvFolderName, OperatingSystem.IsWindows() ? WindowsJobSrvExecutable : LinuxJobSrvExecutable)
     ];
 
     public async Task<ApplicationInstallResult> InstallAsync(int postgresPort, bool reinstallExisting, Action<string> log, CancellationToken cancellationToken = default)
@@ -86,6 +93,7 @@ public sealed class ProductApplicationInstaller
         if (reinstallExisting && Directory.Exists(targetRoot))
         {
             log(Format(AppStrings.InstallerProductRemovingPreviousInstallLog, ("Directory", targetRoot)));
+            UninstallJobSrvService(log);
             UninstallPrompriborOpcUaService(targetRoot, log);
             RemoveManagedApplicationFiles(targetRoot, log, cancellationToken);
         }
@@ -122,6 +130,7 @@ public sealed class ProductApplicationInstaller
         }
 
         InstallAndVerifyPrompriborOpcUaService(targetRoot, log);
+        InstallAndVerifyJobSrvService(targetRoot, log);
     }
 
     private static void RemoveManagedApplicationFiles(
@@ -226,7 +235,8 @@ public sealed class ProductApplicationInstaller
         Directory.Exists(Path.Combine(directory, "ASNCtrl_Linux"))
         && Directory.Exists(Path.Combine(directory, "R_Designer_L"))
         && Directory.Exists(Path.Combine(directory, "OilCtrlCfg"))
-        && Directory.Exists(Path.Combine(directory, PrompriborOpcUaFolderName));
+        && Directory.Exists(Path.Combine(directory, PrompriborOpcUaFolderName))
+        && Directory.Exists(Path.Combine(directory, JobSrvFolderName));
 
     private static void RunElevatedWindowsInstall(
         string sourceRoot,
@@ -742,6 +752,233 @@ public sealed class ProductApplicationInstaller
         return OperatingSystem.IsWindows()
             ? WindowsPrompriborOpcUaServiceName
             : LinuxPrompriborOpcUaServiceName;
+    }
+
+    private static void InstallAndVerifyJobSrvService(string targetRoot, Action<string> log)
+    {
+        var executablePath = Path.Combine(
+            targetRoot,
+            JobSrvFolderName,
+            OperatingSystem.IsWindows() ? WindowsJobSrvExecutable : LinuxJobSrvExecutable);
+        if (!File.Exists(executablePath))
+        {
+            throw new FileNotFoundException(Format(
+                AppStrings.InstallerProductJobSrvExecutableNotFound,
+                ("Path", executablePath)));
+        }
+
+        if (IsJobSrvServiceRegistered())
+        {
+            log(AppStrings.InstallerProductJobSrvStaleServiceLog);
+            UninstallJobSrvService(log);
+        }
+
+        log(Format(AppStrings.InstallerProductJobSrvInstallingServiceLog, ("Path", executablePath)));
+        var result = OperatingSystem.IsWindows()
+            ? RunLoggedProcess(
+                "sc.exe",
+                [
+                    "create",
+                    WindowsJobSrvServiceName,
+                    "binPath=",
+                    executablePath,
+                    "DisplayName=",
+                    "Prompribor Job Service",
+                    "start=",
+                    "demand"
+                ],
+                null,
+                log)
+            : InstallLinuxJobSrvSystemdService(executablePath, log);
+
+        if (result.ExitCode != 0)
+        {
+            throw new InvalidOperationException(Format(
+                AppStrings.InstallerProductJobSrvInstallFailed,
+                ("ExitCode", result.ExitCode.ToString())));
+        }
+
+        if (!WaitForJobSrvServiceRegistration(expectedRegistered: true, TimeSpan.FromSeconds(10)))
+        {
+            throw new InvalidOperationException(AppStrings.InstallerProductJobSrvRegistrationNotFound);
+        }
+
+        StopAndDisableJobSrvService(log);
+        if (!WaitForJobSrvServiceStopped(TimeSpan.FromSeconds(10)))
+        {
+            throw new InvalidOperationException(AppStrings.InstallerProductJobSrvNotStopped);
+        }
+
+        log(Format(
+            AppStrings.InstallerProductJobSrvServiceRegisteredLog,
+            ("ServiceName", OperatingSystem.IsWindows() ? WindowsJobSrvServiceName : LinuxJobSrvServiceName)));
+        log(AppStrings.InstallerProductJobSrvServiceLeftStoppedLog);
+    }
+
+    private static ProcessExecutionResult InstallLinuxJobSrvSystemdService(
+        string executablePath,
+        Action<string> log)
+    {
+        if (!OperatingSystem.IsLinux())
+        {
+            throw new PlatformNotSupportedException();
+        }
+
+        File.SetUnixFileMode(
+            executablePath,
+            File.GetUnixFileMode(executablePath)
+            | UnixFileMode.UserExecute
+            | UnixFileMode.GroupExecute
+            | UnixFileMode.OtherExecute);
+
+        var workingDirectory = Path.GetDirectoryName(executablePath)!;
+        var unitPath = Path.Combine("/etc/systemd/system", LinuxJobSrvServiceName);
+        var unit = $"""
+            [Unit]
+            Description=Prompribor Job Service
+            After=network.target postgresql.service prompribor_opcua_service.service
+
+            [Service]
+            Type=notify
+            WorkingDirectory={workingDirectory}
+            ExecStart={executablePath}
+            KillSignal=SIGINT
+            TimeoutStopSec=30
+
+            [Install]
+            WantedBy=multi-user.target
+            """;
+
+        File.WriteAllText(unitPath, unit + Environment.NewLine, new UTF8Encoding(false));
+        return RunLoggedProcess("systemctl", ["daemon-reload"], null, log);
+    }
+
+    private static void UninstallJobSrvService(Action<string> log)
+    {
+        if (!IsJobSrvServiceRegistered())
+        {
+            return;
+        }
+
+        var serviceName = OperatingSystem.IsWindows() ? WindowsJobSrvServiceName : LinuxJobSrvServiceName;
+        log(Format(AppStrings.InstallerProductJobSrvUninstallingServiceLog, ("ServiceName", serviceName)));
+
+        if (OperatingSystem.IsWindows())
+        {
+            RunLoggedProcess("sc.exe", ["stop", WindowsJobSrvServiceName], null, log);
+            RunLoggedProcess("sc.exe", ["delete", WindowsJobSrvServiceName], null, log);
+        }
+        else if (OperatingSystem.IsLinux())
+        {
+            RunLoggedProcess("systemctl", ["disable", "--now", LinuxJobSrvServiceName], null, log);
+            var unitPath = Path.Combine("/etc/systemd/system", LinuxJobSrvServiceName);
+            if (File.Exists(unitPath))
+            {
+                File.Delete(unitPath);
+            }
+
+            RunLoggedProcess("systemctl", ["daemon-reload"], null, log);
+        }
+
+        if (!WaitForJobSrvServiceRegistration(expectedRegistered: false, TimeSpan.FromSeconds(10)))
+        {
+            throw new InvalidOperationException(AppStrings.InstallerProductJobSrvUninstallFailed);
+        }
+
+        log(AppStrings.InstallerProductJobSrvServiceUninstalledLog);
+    }
+
+    private static void StopAndDisableJobSrvService(Action<string> log)
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            RunLoggedProcess("sc.exe", ["stop", WindowsJobSrvServiceName], null, log);
+            var result = RunLoggedProcess(
+                "sc.exe",
+                ["config", WindowsJobSrvServiceName, "start=", "demand"],
+                null,
+                log);
+            if (result.ExitCode != 0)
+            {
+                throw new InvalidOperationException(Format(
+                    AppStrings.InstallerProductJobSrvManualStartupFailed,
+                    ("ExitCode", result.ExitCode.ToString())));
+            }
+        }
+        else if (OperatingSystem.IsLinux())
+        {
+            var result = RunLoggedProcess(
+                "systemctl",
+                ["disable", "--now", LinuxJobSrvServiceName],
+                null,
+                log);
+            if (result.ExitCode != 0)
+            {
+                throw new InvalidOperationException(Format(
+                    AppStrings.InstallerProductJobSrvManualStartupFailed,
+                    ("ExitCode", result.ExitCode.ToString())));
+            }
+        }
+    }
+
+    private static bool IsJobSrvServiceRegistered()
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return RunLoggedProcess("sc.exe", ["query", WindowsJobSrvServiceName], null, _ => { }).ExitCode == 0;
+        }
+
+        return OperatingSystem.IsLinux()
+            && RunLoggedProcess("systemctl", ["cat", LinuxJobSrvServiceName], null, _ => { }).ExitCode == 0;
+    }
+
+    private static bool WaitForJobSrvServiceRegistration(bool expectedRegistered, TimeSpan timeout)
+    {
+        var stopwatch = Stopwatch.StartNew();
+        while (stopwatch.Elapsed < timeout)
+        {
+            if (IsJobSrvServiceRegistered() == expectedRegistered)
+            {
+                return true;
+            }
+
+            Thread.Sleep(250);
+        }
+
+        return IsJobSrvServiceRegistered() == expectedRegistered;
+    }
+
+    private static bool WaitForJobSrvServiceStopped(TimeSpan timeout)
+    {
+        var stopwatch = Stopwatch.StartNew();
+        while (stopwatch.Elapsed < timeout)
+        {
+            if (IsJobSrvServiceStopped())
+            {
+                return true;
+            }
+
+            Thread.Sleep(250);
+        }
+
+        return IsJobSrvServiceStopped();
+    }
+
+    private static bool IsJobSrvServiceStopped()
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            var result = RunLoggedProcess("sc.exe", ["query", WindowsJobSrvServiceName], null, _ => { });
+            return result.ExitCode == 0
+                && Regex.IsMatch(result.Output, @"STATE\s*:\s*1\b", RegexOptions.CultureInvariant);
+        }
+
+        return OperatingSystem.IsLinux()
+            && RunLoggedProcess(
+                "systemctl",
+                ["is-active", "--quiet", LinuxJobSrvServiceName],
+                null,
+                _ => { }).ExitCode != 0;
     }
 
     private static bool WaitForTcpPort(int port, TimeSpan timeout)

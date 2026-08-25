@@ -60,7 +60,7 @@ public static class EnglishAppStrings
     public const string InstallerProductInstallingApplicationLog = "Installing {Application}: {Source} -> {Target}";
     public const string InstallerProductOilCtrlCfgNotFound = "OilCtrlCfg was not found: {Path}";
     public const string InstallerProductPlatformNotSupported = "Application installation is supported only on Windows and Linux.";
-    public const string InstallerProductBundleRootNotFound = "The product bundle folder with ASNCtrl_Linux, R_Designer_L, OilCtrlCfg, and PrompriborOPCUA was not found. Start Pyramid from the shared single build.";
+    public const string InstallerProductBundleRootNotFound = "The product bundle folder with ASNCtrl_Linux, R_Designer_L, OilCtrlCfg, PrompriborOPCUA, and JobSRV was not found. Start Pyramid from the shared single build.";
     public const string InstallerProductWindowsCopyRequiresAdminLog = "Copying applications to C:\\Prompribor. Administrator privileges are required.";
     public const string InstallerProductLinuxCopyRequiresAdminLog = "Copying applications to /opt/prompribor. Administrator privileges are required.";
     public const string InstallerProductElevatedHelperStartFailed = "Could not start the elevated helper for application installation.";
@@ -97,6 +97,18 @@ public static class EnglishAppStrings
     public const string InstallerProductOpcUaSettingsNotFound = "The Prompribor OPC UA settings file was not found: {Path}";
     public const string InstallerProductOpcUaSettingsInstalledLog = "The Prompribor OPC UA settings file was installed: {Path}";
     public const string InstallerProductOpcUaSettingsPreservedLog = "The existing Prompribor OPC UA settings file was preserved unchanged: {Path}";
+    public const string InstallerProductJobSrvExecutableNotFound = "The JobSRV service executable was not found: {Path}";
+    public const string InstallerProductJobSrvStaleServiceLog = "A previously registered JobSRV service was detected. Removing the old registration.";
+    public const string InstallerProductJobSrvInstallingServiceLog = "Registering the JobSRV service: {Path}";
+    public const string InstallerProductJobSrvInstallFailed = "JobSRV service registration finished with exit code {ExitCode}.";
+    public const string InstallerProductJobSrvRegistrationNotFound = "The installation command completed, but the JobSRV service was not found in the service manager.";
+    public const string InstallerProductJobSrvServiceRegisteredLog = "The JobSRV service was registered: {ServiceName}";
+    public const string InstallerProductJobSrvUninstallingServiceLog = "Removing the previous JobSRV service registration: {ServiceName}";
+    public const string InstallerProductJobSrvUninstallFailed = "The previous JobSRV service could not be removed.";
+    public const string InstallerProductJobSrvServiceUninstalledLog = "The previous JobSRV service was removed.";
+    public const string InstallerProductJobSrvManualStartupFailed = "Manual startup could not be configured for the JobSRV service. Exit code: {ExitCode}.";
+    public const string InstallerProductJobSrvNotStopped = "The JobSRV service was registered but did not enter the stopped state.";
+    public const string InstallerProductJobSrvServiceLeftStoppedLog = "JobSRV verification completed. The service is installed for manual startup and left stopped.";
     public const string InstallerWizardOperation = "PostgreSQL GUI installer";
     public const string InstallerCheckOperation = "PostgreSQL check";
     public const string InstallerCompletedStatus = "Operation completed";

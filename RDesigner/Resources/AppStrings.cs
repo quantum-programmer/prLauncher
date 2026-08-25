@@ -60,7 +60,7 @@ public static class AppStrings
     public static string InstallerProductInstallingApplicationLog = "Установка {Application}: {Source} -> {Target}";
     public static string InstallerProductOilCtrlCfgNotFound = "OilCtrlCfg не найден: {Path}";
     public static string InstallerProductPlatformNotSupported = "Установка приложений поддерживается только в Windows и Linux.";
-    public static string InstallerProductBundleRootNotFound = "Не найдена папка поставочной сборки с приложениями ASNCtrl_Linux, R_Designer_L, OilCtrlCfg и PrompriborOPCUA. Запускайте Pyramid из общей single-сборки.";
+    public static string InstallerProductBundleRootNotFound = "Не найдена папка поставочной сборки с приложениями ASNCtrl_Linux, R_Designer_L, OilCtrlCfg, PrompriborOPCUA и JobSRV. Запускайте Pyramid из общей single-сборки.";
     public static string InstallerProductWindowsCopyRequiresAdminLog = "Копирование приложений в C:\\Prompribor. Требуются права администратора.";
     public static string InstallerProductLinuxCopyRequiresAdminLog = "Копирование приложений в /opt/prompribor. Требуются права администратора.";
     public static string InstallerProductElevatedHelperStartFailed = "Не удалось запустить elevated helper для установки приложений.";
@@ -97,6 +97,18 @@ public static class AppStrings
     public static string InstallerProductOpcUaSettingsNotFound = "Файл настроек Prompribor OPC UA не найден: {Path}";
     public static string InstallerProductOpcUaSettingsInstalledLog = "Файл настроек Prompribor OPC UA установлен: {Path}";
     public static string InstallerProductOpcUaSettingsPreservedLog = "Существующий файл настроек Prompribor OPC UA сохранен без изменений: {Path}";
+    public static string InstallerProductJobSrvExecutableNotFound = "Исполняемый файл службы JobSRV не найден: {Path}";
+    public static string InstallerProductJobSrvStaleServiceLog = "Обнаружена ранее зарегистрированная служба JobSRV. Выполняется удаление старой регистрации.";
+    public static string InstallerProductJobSrvInstallingServiceLog = "Регистрация службы JobSRV: {Path}";
+    public static string InstallerProductJobSrvInstallFailed = "Регистрация службы JobSRV завершилась с кодом {ExitCode}.";
+    public static string InstallerProductJobSrvRegistrationNotFound = "Команда установки завершилась, но служба JobSRV не найдена в диспетчере служб.";
+    public static string InstallerProductJobSrvServiceRegisteredLog = "Служба JobSRV зарегистрирована: {ServiceName}";
+    public static string InstallerProductJobSrvUninstallingServiceLog = "Удаление предыдущей регистрации службы JobSRV: {ServiceName}";
+    public static string InstallerProductJobSrvUninstallFailed = "Не удалось удалить предыдущую службу JobSRV.";
+    public static string InstallerProductJobSrvServiceUninstalledLog = "Предыдущая служба JobSRV удалена.";
+    public static string InstallerProductJobSrvManualStartupFailed = "Не удалось настроить ручной запуск службы JobSRV. Код завершения: {ExitCode}.";
+    public static string InstallerProductJobSrvNotStopped = "Служба JobSRV зарегистрирована, но не перешла в остановленное состояние.";
+    public static string InstallerProductJobSrvServiceLeftStoppedLog = "Проверка JobSRV завершена. Служба установлена с ручным запуском и оставлена в остановленном состоянии.";
     public static string InstallerWizardOperation = "Мастер установки PostgreSQL";
     public static string InstallerCheckOperation = "Проверка PostgreSQL";
     public static string InstallerCompletedStatus = "Операция выполнена";
