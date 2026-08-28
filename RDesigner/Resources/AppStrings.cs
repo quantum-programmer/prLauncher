@@ -77,6 +77,10 @@ public static class AppStrings
     public static string InstallerProductCopiedFilesProgressLog = "Скопировано файлов для {Application}: {Count}...";
     public static string InstallerProductInstallCompletedLog = "Установка {Application} завершена. Скопировано файлов: {Count}.";
     public static string InstallerProductOpcUaExecutableNotFound = "Исполняемый файл службы Prompribor OPC UA не найден: {Path}";
+    public static string InstallerProductOpcUaDataDirectoryNotFoundLog = "Каталог данных Prompribor OPC UA пока не создан: {Directory}";
+    public static string InstallerProductOpcUaDataPermissionsSetLog = "Для каталогов и файлов Prompribor OPC UA выставлены права чтения, для settings.json — права чтения и изменения: {Directory}";
+    public static string InstallerProductOpcUaLogDirectoryPreparedLog = "Подготовлен системный каталог журналов Prompribor OPC UA: {Directory}";
+    public static string InstallerProductOpcUaLogPermissionsSetLog = "Для каталогов и файлов журналов Prompribor OPC UA выставлены права чтения: {Directory}";
     public static string InstallerProductOpcUaStaleServiceLog = "Обнаружена ранее зарегистрированная служба Prompribor OPC UA. Выполняется удаление старой регистрации.";
     public static string InstallerProductOpcUaInstallingServiceLog = "Регистрация службы Prompribor OPC UA: {Path}";
     public static string InstallerProductOpcUaInstallFailed = "Регистрация службы Prompribor OPC UA завершилась с кодом {ExitCode}.";

@@ -77,6 +77,10 @@ public static class EnglishAppStrings
     public const string InstallerProductCopiedFilesProgressLog = "Copied files for {Application}: {Count}...";
     public const string InstallerProductInstallCompletedLog = "{Application} installation completed. Copied files: {Count}.";
     public const string InstallerProductOpcUaExecutableNotFound = "The Prompribor OPC UA service executable was not found: {Path}";
+    public const string InstallerProductOpcUaDataDirectoryNotFoundLog = "The Prompribor OPC UA data directory has not been created yet: {Directory}";
+    public const string InstallerProductOpcUaDataPermissionsSetLog = "Read permissions were set for Prompribor OPC UA directories and files; settings.json was made readable and editable: {Directory}";
+    public const string InstallerProductOpcUaLogDirectoryPreparedLog = "The Prompribor OPC UA system log directory was prepared: {Directory}";
+    public const string InstallerProductOpcUaLogPermissionsSetLog = "Read permissions were set for Prompribor OPC UA log directories and files: {Directory}";
     public const string InstallerProductOpcUaStaleServiceLog = "A previously registered Prompribor OPC UA service was detected. Removing the old registration.";
     public const string InstallerProductOpcUaInstallingServiceLog = "Registering the Prompribor OPC UA service: {Path}";
     public const string InstallerProductOpcUaInstallFailed = "Prompribor OPC UA service registration finished with exit code {ExitCode}.";

@@ -28,6 +28,9 @@ public sealed class ProductApplicationInstaller
     private const string WindowsPrompriborOpcUaServiceName = "PrompriborOPCUAService";
     private const string LinuxPrompriborOpcUaServiceName = "prompribor_opcua_service.service";
     private const string LinuxPrompriborOpcUaConfigDirectory = "/root/.config/prompribor_opcua";
+    private const string LinuxPrompriborOpcUaDataDirectory = "/etc/Prompribor";
+    private const string LinuxPrompriborOpcUaLogRootDirectory = "/var/log/Prompribor";
+    private const string LinuxPrompriborOpcUaRuntimeDirectoryName = "PrompriborOPCUAService";
     private const string PrompriborOpcUaSettingsFileName = "settings.json";
     private const int PrompriborOpcUaPort = 4840;
     private const string JobSrvFolderName = "JobSRV";
@@ -465,6 +468,8 @@ public sealed class ProductApplicationInstaller
             ("ServiceName", GetPrompriborOpcUaServiceName())));
         ConfigurePrompriborOpcUaManualStartup(log);
         VerifyPrompriborOpcUaService(log);
+        EnsureLinuxPrompriborOpcUaDataPermissions(log);
+        EnsureLinuxPrompriborOpcUaLogPermissions(log);
     }
 
     private static void UninstallPrompriborOpcUaService(string targetRoot, Action<string> log)
@@ -652,6 +657,7 @@ public sealed class ProductApplicationInstaller
 
         var workingDirectory = Path.GetDirectoryName(executablePath)!;
         InstallLinuxPrompriborOpcUaSettings(workingDirectory, log);
+        PrepareLinuxPrompriborOpcUaLogDirectory(log);
 
         var unitPath = Path.Combine("/etc/systemd/system", LinuxPrompriborOpcUaServiceName);
         File.Delete(unitPath);
@@ -663,6 +669,8 @@ public sealed class ProductApplicationInstaller
             [Service]
             Type=forking
             Environment=HOME=/root
+            Environment=XDG_CACHE_HOME={LinuxPrompriborOpcUaLogRootDirectory}
+            UMask=0022
             WorkingDirectory={workingDirectory}
             ExecStart={executablePath}
             KillMode=control-group
@@ -714,6 +722,93 @@ public sealed class ProductApplicationInstaller
         log(Format(
             AppStrings.InstallerProductOpcUaSettingsInstalledLog,
             ("Path", targetPath)));
+    }
+
+    private static void EnsureLinuxPrompriborOpcUaDataPermissions(Action<string> log)
+    {
+        if (!OperatingSystem.IsLinux())
+        {
+            return;
+        }
+
+        if (!Directory.Exists(LinuxPrompriborOpcUaDataDirectory))
+        {
+            log(Format(
+                AppStrings.InstallerProductOpcUaDataDirectoryNotFoundLog,
+                ("Directory", LinuxPrompriborOpcUaDataDirectory)));
+            return;
+        }
+
+        SetLinuxReadableTreePermissions(LinuxPrompriborOpcUaDataDirectory);
+
+        var editableSettingsPath = Path.Combine(
+            LinuxPrompriborOpcUaDataDirectory,
+            LinuxPrompriborOpcUaRuntimeDirectoryName,
+            PrompriborOpcUaSettingsFileName);
+        if (File.Exists(editableSettingsPath))
+        {
+            const UnixFileMode editableSettingsMode =
+                UnixFileMode.UserRead | UnixFileMode.UserWrite |
+                UnixFileMode.GroupRead | UnixFileMode.GroupWrite |
+                UnixFileMode.OtherRead | UnixFileMode.OtherWrite;
+            File.SetUnixFileMode(editableSettingsPath, editableSettingsMode);
+        }
+
+        log(Format(
+            AppStrings.InstallerProductOpcUaDataPermissionsSetLog,
+            ("Directory", LinuxPrompriborOpcUaDataDirectory)));
+    }
+
+    private static void PrepareLinuxPrompriborOpcUaLogDirectory(Action<string> log)
+    {
+        Directory.CreateDirectory(LinuxPrompriborOpcUaLogRootDirectory);
+        SetLinuxReadableTreePermissions(LinuxPrompriborOpcUaLogRootDirectory);
+        log(Format(
+            AppStrings.InstallerProductOpcUaLogDirectoryPreparedLog,
+            ("Directory", LinuxPrompriborOpcUaLogRootDirectory)));
+    }
+
+    private static void EnsureLinuxPrompriborOpcUaLogPermissions(Action<string> log)
+    {
+        if (!OperatingSystem.IsLinux() || !Directory.Exists(LinuxPrompriborOpcUaLogRootDirectory))
+        {
+            return;
+        }
+
+        SetLinuxReadableTreePermissions(LinuxPrompriborOpcUaLogRootDirectory);
+        log(Format(
+            AppStrings.InstallerProductOpcUaLogPermissionsSetLog,
+            ("Directory", LinuxPrompriborOpcUaLogRootDirectory)));
+    }
+
+    private static void SetLinuxReadableTreePermissions(string rootDirectory)
+    {
+        if (!OperatingSystem.IsLinux())
+        {
+            throw new PlatformNotSupportedException();
+        }
+
+        const UnixFileMode directoryMode =
+            UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute |
+            UnixFileMode.GroupRead | UnixFileMode.GroupExecute |
+            UnixFileMode.OtherRead | UnixFileMode.OtherExecute;
+
+        const UnixFileMode fileMode =
+            UnixFileMode.UserRead | UnixFileMode.UserWrite |
+            UnixFileMode.GroupRead |
+            UnixFileMode.OtherRead;
+
+        File.SetUnixFileMode(rootDirectory, directoryMode);
+
+        foreach (var directory in Directory.EnumerateDirectories(rootDirectory, "*", SearchOption.AllDirectories))
+        {
+            File.SetUnixFileMode(directory, directoryMode);
+        }
+
+        foreach (var file in Directory.EnumerateFiles(rootDirectory, "*", SearchOption.AllDirectories))
+        {
+            File.SetUnixFileMode(file, fileMode);
+        }
     }
 
     private static ProcessExecutionResult RemovePrompriborOpcUaServiceRegistration(Action<string> log)
